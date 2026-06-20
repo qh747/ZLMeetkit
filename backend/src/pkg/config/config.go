@@ -7,36 +7,22 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// ZLMConfig only carries the bits needed to talk to the ZLMediaKit REST API.
+// The ZLM "app" (stream group) is decided per-call by the front end (mapped
+// from the user-supplied "room"), so it is intentionally not part of the
+// static configuration.
 type ZLMConfig struct {
 	APIBase string `yaml:"api_base"`
 	Secret  string `yaml:"secret"`
-	App     string `yaml:"app"`
-	Vhost   string `yaml:"vhost"`
-}
-
-// IceServer mirrors the browser RTCIceServer dictionary so the front end can
-// consume it directly.
-type IceServer struct {
-	URLs       []string `yaml:"urls" json:"urls"`
-	Username   string   `yaml:"username,omitempty" json:"username,omitempty"`
-	Credential string   `yaml:"credential,omitempty" json:"credential,omitempty"`
-}
-
-// WebRTCConfig holds runtime knobs the front end fetches at startup. Keeping
-// these on the server avoids hard-coding STUN/TURN inside the static JS so the
-// same build can run on LAN and on the public internet.
-type WebRTCConfig struct {
-	IceServers []IceServer `yaml:"ice_servers" json:"iceServers"`
 }
 
 type Config struct {
-	Listen         string       `yaml:"listen"`
-	TLSCert        string       `yaml:"tls_cert"`
-	TLSKey         string       `yaml:"tls_key"`
-	StaticDir      string       `yaml:"static_dir"`
-	AllowedOrigins []string     `yaml:"allowed_origins"`
-	ZLM            ZLMConfig    `yaml:"zlm"`
-	WebRTC         WebRTCConfig `yaml:"webrtc"`
+	Listen         string    `yaml:"listen"`
+	TLSCert        string    `yaml:"tls_cert"`
+	TLSKey         string    `yaml:"tls_key"`
+	StaticDir      string    `yaml:"static_dir"`
+	AllowedOrigins []string  `yaml:"allowed_origins"`
+	ZLM            ZLMConfig `yaml:"zlm"`
 }
 
 // Load reads configuration from a YAML file, applying defaults.
@@ -54,17 +40,6 @@ func Load(path string) (*Config, error) {
 	}
 	if c.ZLM.APIBase == "" {
 		c.ZLM.APIBase = "http://127.0.0.1:80"
-	}
-	if c.ZLM.App == "" {
-		c.ZLM.App = "meeting"
-	}
-	if c.ZLM.Vhost == "" {
-		c.ZLM.Vhost = "__defaultVhost__"
-	}
-	if c.WebRTC.IceServers == nil {
-		// Marshalling nil slice yields JSON `null`; emit an explicit empty
-		// array so the front end can skip null-checks.
-		c.WebRTC.IceServers = []IceServer{}
 	}
 	return c, nil
 }

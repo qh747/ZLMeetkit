@@ -27,16 +27,14 @@ func newRoom(id, mode string, hub *Hub) *Room {
 }
 
 // capacity returns the max number of clients allowed in this room.
-// 0 means unlimited.
+// 0 means unlimited. Solo rooms now allow multiple clients (publishers and
+// players sharing the same ZLM app) so a publisher and one or more players
+// can co-exist without spinning up extra rooms.
 func (r *Room) capacity() int {
-	switch r.Mode {
-	case RoomModeCall:
+	if r.Mode == RoomModeCall {
 		return 2
-	case RoomModeSolo:
-		return 1
-	default:
-		return 0
 	}
+	return 0
 }
 
 // isBroadcast reports whether peer-* / chat events should be relayed within
@@ -145,14 +143,15 @@ func (r *Room) removeClient(c *Client) {
 	c.mu.Unlock()
 
 	// Stop recording then close streams on ZLM, off the hot path.
+	app := r.ID
 	go func(recordSids, sids []string) {
 		for _, sid := range recordSids {
-			if err := r.hub.zlm.StopRecord(sid, zlmRecordType()); err != nil {
+			if err := r.hub.zlm.StopRecord(app, sid, zlmRecordType()); err != nil {
 				log.Printf("[room %s] stop record %s: %v", r.ID, sid, err)
 			}
 		}
 		for _, sid := range sids {
-			if err := r.hub.zlm.CloseStream(sid); err != nil {
+			if err := r.hub.zlm.CloseStream(app, sid); err != nil {
 				log.Printf("[room %s] close stream %s: %v", r.ID, sid, err)
 			}
 		}

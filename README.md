@@ -10,7 +10,7 @@
 
 ```
 浏览器 ──(WebSocket 信令)── Go 后端 ──(HTTP REST)── ZLMediaKit
-   │                                                    ▲
+   │                                                  ▲
    └──────────── WebRTC ICE/SRTP（音视频直连）─────────┘
 ```
 
@@ -20,21 +20,18 @@
 - 后端使用 Go + WebSocket 实现信令，代码极简，易于二次开发。
 - 前端零构建依赖，纯原生 HTML/JS，浏览器直开即用。
 - 每个用户独立推流（`cam` + 可选 `screen`），其他人各自订阅，互不耦合。
-- 流名称由后端统一生成（`room_<roomId>_user_<userId>_<kind>`），客户端无需关心命名。
+- 「房间号」即 ZLM `app`，同房间共享一个流分组；会议/通话流名后端固定为 `user_<userId>_<kind>`，独立推/拉流由用户输入流名。
 - 支持麦克风/摄像头热切换、屏幕共享、文字聊天。
-- 支持 TLS（HTTPS/WSS），满足局域网多设备摄像头权限要求。
 
 ## 项目定位
 
 - 学习 WebRTC + ZLMediaKit 信令交互的最小参考实现。
-- 企业内网快速搭建多人音视频会议的轻量底座。
 - 可作为二次开发基础，扩展鉴权、录制、转推等生产特性。
 
 ## 功能清单
 
 - 业务选择首页
   - 多人会议 / 1v1 通话 / 推流 / 拉流 四种业务卡片入口
-  - 支持 `?biz=meeting|call|push|play` 深链直接打开对应表单
 
 - 多人会议
   - 多人同时入会，房间隔离
@@ -50,11 +47,11 @@
   - 同样支持录制
 
 - 独立推流
-  - 输入流名后将本机摄像头推到 ZLM（mode=solo）
+  - 输入「房间号 + 流名」后将本机摄像头推到 ZLM（`mode=solo`，房间号映射为 ZLM `app`）
   - 录制按钮触发后端调用 ZLM 录制
 
 - 独立拉流
-  - 输入流名后从 ZLM 拉流播放
+  - 输入「房间号 + 流名」从 ZLM 拉流播放（房间号需与推流端一致）
 
 - 信令（WebSocket，JSON）
   - 统一 envelope：`{ "type", "reqId", "payload" }`
@@ -73,30 +70,14 @@
 
 ### 1. 准备 ZLMediaKit
 
-最简单的方式（Linux / macOS）：
-
-```bash
-docker run -d --name zlm \
-  --restart=always --network=host \
-  -e MK_GENERAL_SECRET=035c73f7-bb6b-4889-a715-d9eb2d1925cc \
-  zlmediakit/zlmediakit:master
-```
-
-> `--network=host` 让 WebRTC 的 UDP 端口（默认 8000）直接暴露，避免 NAT 困扰。
-> Windows 不支持 host 网络，需显式映射 `80(TCP)`、`8000(UDP)`，并将 `webrtc.externIP` 配置为宿主机 LAN IP。
-
-关键配置项（`config.ini`）：
+关联配置项（`config.ini`）：
 
 ```ini
 [api]
-secret=035c73f7-bb6b-4889-a715-d9eb2d1925cc
+secret=
 
 [http]
-port=80
-
-[rtc]
-port=8000          ; WebRTC UDP 监听端口
-externIP=          ; 多网卡 / 公网环境务必填写宿主机可达 IP
+port=
 ```
 
 ### 2. 编译后端
@@ -115,11 +96,19 @@ bash backend/scripts/build.sh
 - 执行 `go mod tidy` 拉取依赖
 - 编译，输出到 `backend/bin/zlm_meet`
 
-编译完成后，**编辑配置文件**，至少修改 `zlm.api_base` 和 `zlm.secret`：
+编译完成后，**编辑配置文件**，修改：
 
 ```bash
 vi backend/bin/conf/config.yaml
 ```
+
+- `zlm.api_base`：zlm 服务的 HTTP API 地址，例如：`http://zlm_ip:zlm_port`
+- `zlm.secret`：zlm 服务的密钥
+- `tls_cert`：TLS 证书文件路径，包含证书文件名
+- `tls_key`：TLS 密钥文件路径，包含密钥文件名
+- `static_dir`：前端资源文件根目录路径
+
+> 注：ZLM 流路径里的 `app` 字段由前端「房间号」决定，不在配置文件中。同房间内所有人共用同一个 ZLM `app`，互相可见。
 
 ### 3. 启动后端
 
@@ -127,18 +116,14 @@ vi backend/bin/conf/config.yaml
 bash backend/scripts/start.sh
 ```
 
-脚本会切换到 `backend/bin/` 目录后启动服务，确保 `static_dir` 和证书等相对路径正确解析。默认监听 `:8080`，打开 `http://localhost:8080/` 即可看到加入页。
+脚本会切换到 `backend/bin/` 目录后启动服务，确保 `static_dir` 和证书等相对路径正确解析。默认监听 `:8080`，打开 `https://信令服务ip地址:信令服务端口/` 即可看到加入页。
 
 ### 4. 局域网多设备访问（HTTPS）
 
-浏览器仅在 `https://` 或 `http://localhost` 下允许获取摄像头。局域网其他设备访问时需要 TLS，用 OpenSSL 生成自签证书，直接输出到 `backend/bin/cert/`（替换 IP 为宿主机实际 LAN IP）：
+浏览器仅在 `https://` 或 `http://localhost` 下允许获取摄像头。局域网其他设备访问时需要 TLS，用 OpenSSL 生成自签证书，直接输出到 `backend/bin/cert/`：
 
 ```bash
-openssl req -x509 -newkey rsa:2048 -nodes -days 825 \
-  -keyout backend/bin/cert/key.pem \
-  -out backend/bin/cert/cert.pem \
-  -subj "/CN=localhost" \
-  -addext "subjectAltName=IP:192.168.1.10,IP:127.0.0.1,DNS:localhost"
+openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes
 ```
 
 `build.sh` 生成的 `conf/config.yaml` 已将证书路径预设为：
@@ -148,9 +133,7 @@ tls_cert: "cert/cert.pem"
 tls_key:  "cert/key.pem"
 ```
 
-证书放好后直接重启服务即可，访问 `https://192.168.1.10:8080/`，浏览器提示证书不受信任时点击"高级 → 继续访问"。
-
-> 临时替代方案：Chrome 打开 `chrome://flags/#unsafely-treat-insecure-origin-as-secure`，将 `http://192.168.1.10:8080` 加入白名单。
+证书放好后直接重启服务即可，访问 `https://信令服务ip地址:信令服务端口/`，浏览器提示证书不受信任时点击"高级 → 继续访问"。
 
 ## 项目结构
 
@@ -180,14 +163,19 @@ zlm_meet/
 │           │   └── client.go     # 单连接读写循环 + 消息处理
 │           └── zlm/client.go     # ZLM REST API 封装（SDP 交换 / close_streams）
 └── frontend/
-    ├── index.html                # 加入页
-    ├── meeting.html              # 会议页
+    ├── index.html                # 业务选择 + 加入表单
+    ├── meeting.html              # 多人会议页
+    ├── call.html                 # 1v1 通话页（与 meeting 共用 app.js）
+    ├── push.html                 # 独立推流页
+    ├── play.html                 # 独立拉流页
     ├── css/style.css
     └── js/
         ├── signaling.js          # WS 客户端（含 request/response）
-        ├── webrtc.js             # publishStream / playStream
+        ├── webrtc.js             # publishStream / playStream（含 ICE 等待优化）
         ├── ui.js                 # 视频网格 + 聊天面板 DOM 操作
-        └── app.js                # 主流程
+        ├── app.js                # 会议/通话主流程（采集与信令并行启动）
+        ├── push.js               # 独立推流主流程
+        └── play.js               # 独立拉流主流程
 ```
 
 ## 信令协议
@@ -204,7 +192,7 @@ zlm_meet/
 
 | type             | payload                                                                          | 说明                                                         |
 |------------------|----------------------------------------------------------------------------------|--------------------------------------------------------------|
-| `join`           | `{room, nickname, mode?}`                                                        | 加入房间；`mode`=`meeting`(默认) / `call`(1v1, 容量 2) / `solo`(独立推/拉流) |
+| `join`           | `{room, nickname, mode?}`                                                        | 加入房间，`room` 映射为 ZLM `app`；`mode`=`meeting`(默认) / `call`(1v1, 容量 2) / `solo`(独立推/拉流，容量不限) |
 | `leave`          | `{}`                                                                             | 主动离开（也可直接断开 WS）                                  |
 | `chat`           | `{text}`                                                                         | 向房间内广播文本（solo 模式不广播）                          |
 | `media-state`    | `{micOn, camOn}`                                                                 | 同步麦克风/摄像头状态给其他人                                |
@@ -231,10 +219,11 @@ zlm_meet/
 
 ## 已知限制
 
-- 仅在局域网/直连可达的 WebRTC 环境下验证；公网部署需配置 STUN/TURN 并设置 `webrtc.externIP`。
+- 仅在局域网/直连可达的 WebRTC 环境下验证；公网部署需在 ZLM 端配置 STUN/TURN 并设置 `webrtc.externIP`，前端 `RTCPeerConnection` 默认不内置 `iceServers`，如需 STUN/TURN 请自行在 `frontend/js/webrtc.js` 中扩展。
 - 无鉴权机制，房间号即门票；生产化建议在 `join` 前加 token 校验。
 - 无 SFU 编排逻辑，依赖 ZLM 作媒体网关；如需 simulcast/SVC，需扩展 SDP 协商。
 - 屏幕共享依赖 `getDisplayMedia`，部分浏览器（如 Safari）行为存在差异。
+- 房间即 ZLM `app`：不同房间号的用户彼此不可见，同一房间号会复用同一个 ZLM 流分组，注意避免房间号冲突。
 
 ## 快速排错
 

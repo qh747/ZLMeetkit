@@ -3,8 +3,9 @@
 import { Signaling } from './signaling.js';
 import { playStream, closePC } from './webrtc.js';
 
+const room = sessionStorage.getItem('zlm.room') || '';
 const streamId = sessionStorage.getItem('zlm.streamId') || '';
-if (!streamId) {
+if (!room || !streamId) {
   location.href = 'index.html';
 }
 
@@ -14,8 +15,10 @@ const state = {
   joined: false,
 };
 
-document.getElementById('streamLabel').textContent = streamId;
+document.getElementById('streamLabel').textContent = `${room} / ${streamId}`;
 document.getElementById('streamNameInfo').textContent = streamId;
+const appNameEl = document.getElementById('appName');
+if (appNameEl) appNameEl.textContent = room;
 
 const statusEl = document.getElementById('streamState');
 const statusBar = document.getElementById('statusBar');
@@ -44,10 +47,10 @@ async function main() {
   state.signaling.on('_close', () => setStatus('信令已断开', true, 0));
   await state.signaling.connect();
 
-  // Each player joins its own solo room so backend can track membership; the
-  // room id is namespaced separately from publishers.
+  // Same room (ZLM app) as the publisher so the back end can locate the
+  // stream group; capacity is unlimited in solo mode.
   state.signaling.send('join', {
-    room: 'player_' + streamId + '_' + Math.random().toString(36).slice(2, 8),
+    room,
     nickname: 'player',
     mode: 'solo',
   });

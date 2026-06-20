@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ZLM 媒体服务 · 业务选择</title>
+  <title>ZLM Meet · 业务选择</title>
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body class="home-page">
   <main class="home-wrap">
     <header class="home-header">
-      <h1>ZLM 媒体服务</h1>
+      <h1>ZLM Meet</h1>
       <p class="subtitle">选择要使用的业务</p>
     </header>
 
@@ -32,7 +32,7 @@
       <button class="home-card" data-biz="play">
         <div class="card-icon">📥</div>
         <div class="card-title">拉流</div>
-        <div class="card-desc">输入流名，从 ZLM 拉取并播放</div>
+        <div class="card-desc">输入房间号与流名，从 ZLM 拉取并播放</div>
       </button>
     </section>
 
@@ -84,6 +84,8 @@
 
       const SAVED_NAME = sessionStorage.getItem('zlm.nickname') || '';
       if (SAVED_NAME) inputs.nickname.value = SAVED_NAME;
+      const SAVED_ROOM = sessionStorage.getItem('zlm.room') || '';
+      if (SAVED_ROOM) inputs.room.value = SAVED_ROOM;
 
       let currentBiz = null;
 
@@ -111,12 +113,16 @@
             break;
           case 'push':
             title.textContent = '推流';
-            showFields({ nickname: false, room: false, stream: true });
+            roomLabel.textContent = '房间号';
+            showFields({ nickname: false, room: true, stream: true });
+            inputs.room.placeholder = '比如 live';
             if (!inputs.stream.value) inputs.stream.value = 'pub_' + Date.now();
             break;
           case 'play':
             title.textContent = '拉流';
-            showFields({ nickname: false, room: false, stream: true });
+            roomLabel.textContent = '房间号';
+            showFields({ nickname: false, room: true, stream: true });
+            inputs.room.placeholder = '比如 live';
             break;
         }
         if (typeof dialog.showModal === 'function') {
@@ -144,20 +150,15 @@
           sessionStorage.setItem('zlm.nickname', nickname);
           sessionStorage.setItem('zlm.room', room);
           location.href = currentBiz === 'meeting' ? 'meeting.html' : 'call.html';
-        } else if (currentBiz === 'push') {
+        } else if (currentBiz === 'push' || currentBiz === 'play') {
+          if (!room) return;
           if (!isSafeStream(stream)) {
             alert('流名只能包含字母、数字、下划线、连字符或点');
             return;
           }
+          sessionStorage.setItem('zlm.room', room);
           sessionStorage.setItem('zlm.streamId', stream);
-          location.href = 'push.html';
-        } else if (currentBiz === 'play') {
-          if (!isSafeStream(stream)) {
-            alert('流名只能包含字母、数字、下划线、连字符或点');
-            return;
-          }
-          sessionStorage.setItem('zlm.streamId', stream);
-          location.href = 'play.html';
+          location.href = currentBiz === 'push' ? 'push.html' : 'play.html';
         }
       });
 

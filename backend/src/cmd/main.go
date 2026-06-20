@@ -36,7 +36,7 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("[main] listening on %s (zlm=%s app=%s)", cfg.Listen, cfg.ZLM.APIBase, cfg.ZLM.App)
+		log.Printf("[main] listening on %s (zlm=%s)", cfg.Listen, cfg.ZLM.APIBase)
 		var err error
 		if cfg.TLSCert != "" && cfg.TLSKey != "" {
 			err = srv.ListenAndServeTLS(cfg.TLSCert, cfg.TLSKey)

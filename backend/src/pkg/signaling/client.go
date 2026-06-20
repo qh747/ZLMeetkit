@@ -300,7 +300,7 @@ func (c *Client) handleWebRTCOffer(env *Envelope) error {
 		if p.Kind != "cam" && p.Kind != "screen" {
 			return fmt.Errorf("invalid kind for publish: %q", p.Kind)
 		}
-		streamID = buildStreamID(c.room.ID, c.UserID, p.Kind)
+		streamID = buildStreamID(c.UserID, p.Kind)
 		rtcType = zlm.WebRTCPush
 	case "play":
 		if p.TargetUserID == "" {
@@ -333,7 +333,10 @@ func (c *Client) handleWebRTCOffer(env *Envelope) error {
 		return fmt.Errorf("invalid mode: %q", p.Mode)
 	}
 
-	answerSDP, err := c.hub.zlm.ExchangeSDP(rtcType, streamID, p.SDP)
+	// The room id doubles as the ZLM "app" — every interaction with ZLM goes
+	// through this scoping value. Same room ⇔ same ZLM app, so peers and
+	// solo publishers/players line up automatically.
+	answerSDP, err := c.hub.zlm.ExchangeSDP(rtcType, c.room.ID, streamID, p.SDP)
 	if err != nil {
 		return fmt.Errorf("zlm sdp exchange: %w", err)
 	}
@@ -384,7 +387,7 @@ func (c *Client) handleStreamStopped(env *Envelope) error {
 	c.mu.Unlock()
 
 	if sid != "" {
-		if err := c.hub.zlm.CloseStream(sid); err != nil {
+		if err := c.hub.zlm.CloseStream(c.room.ID, sid); err != nil {
 			log.Printf("[client %s] close stream %s: %v", c.UserID, sid, err)
 		}
 		c.room.broadcastStreamStopped(c, p.Kind, sid)
@@ -392,10 +395,11 @@ func (c *Client) handleStreamStopped(env *Envelope) error {
 	return nil
 }
 
-// buildStreamID assembles a deterministic stream name for a (room, user, kind).
-// Format: room_<roomId>_user_<userId>_<kind>
-func buildStreamID(roomID, userID, kind string) string {
-	return fmt.Sprintf("room_%s_user_%s_%s", roomID, userID, kind)
+// buildStreamID assembles a deterministic stream name for a (user, kind)
+// pair. The ZLM "app" already isolates rooms, so the stream name doesn't
+// need to repeat the room id. Format: user_<userId>_<kind>
+func buildStreamID(userID, kind string) string {
+	return fmt.Sprintf("user_%s_%s", userID, kind)
 }
 
 // zlmRecordType returns the fixed MP4 record container used by all flows.
@@ -467,12 +471,12 @@ func (c *Client) handleRecordControl(env *Envelope, start bool) error {
 		return errors.New("stream not owned by this client")
 	}
 
-	// Issue the ZLM REST call.
+	// Issue the ZLM REST call (room.ID == ZLM app).
 	var zerr error
 	if start {
-		zerr = c.hub.zlm.StartRecord(streamID, zlmRecordType())
+		zerr = c.hub.zlm.StartRecord(c.room.ID, streamID, zlmRecordType())
 	} else {
-		zerr = c.hub.zlm.StopRecord(streamID, zlmRecordType())
+		zerr = c.hub.zlm.StopRecord(c.room.ID, streamID, zlmRecordType())
 	}
 	if zerr != nil {
 		return fmt.Errorf("zlm record: %w", zerr)

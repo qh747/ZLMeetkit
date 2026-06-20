@@ -8,7 +8,7 @@
 //   - Render UI updates via MeetingUI.
 
 import { Signaling } from './signaling.js';
-import { publishStream, playStream, closePC, prefetchRtcConfig } from './webrtc.js';
+import { publishStream, playStream, closePC } from './webrtc.js';
 import { MeetingUI } from './ui.js';
 
 // Resolve mode: meeting.html uses 'meeting'; call.html uses 'call'.
@@ -65,14 +65,9 @@ async function main() {
   // still warming up.
   //
   //   ┌── getUserMedia (200~1500ms on cold start)
-  //   ├── /api/rtc-config prefetch (cached for later PCs)
   //   └── WebSocket connect → send 'join' → 'joined' → playStream(peer.*) ──┐
   //                                                                         │
   //                 once getUserMedia resolves: upsert self tile, publish ──┘
-
-  // Kick off the WebRTC config fetch immediately so the first PeerConnection
-  // doesn't pay for it.
-  prefetchRtcConfig();
 
   // (1) Start signaling + media in parallel.
   const wsURL = buildWsURL();

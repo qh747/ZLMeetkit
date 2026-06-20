@@ -4,60 +4,20 @@
 // Latency-sensitive notes:
 //   - ZLMediaKit does not support trickle ICE, so we still have to bake all
 //     candidates into the offer SDP before sending. To avoid the historical
-//     ~2s stall on every PeerConnection we exit `waitIceGathering` as soon as
-//     a usable host candidate is collected (the only kind that matters on
+//     ~2s stall on every PeerConnection we exit `waitIceGathering` as soon
+//     as a usable host candidate is collected (the only kind that matters on
 //     LAN), and cap the absolute wait at ICE_GATHER_TIMEOUT_MS.
-//   - iceServers is fetched lazily from the backend (/api/rtc-config) once
-//     per page so deployments can opt-in to STUN/TURN without a JS rebuild.
-//     Default is empty for LAN deployments where host candidates are enough.
+//   - iceServers is empty by default, which is the right choice for LAN
+//     deployments: host candidates suffice and skipping STUN avoids a
+//     ~1.5s gather stall when the public STUN server is unreachable.
 
 const ICE_GATHER_TIMEOUT_MS = 300;       // hard cap: we'd rather try with what we have
 const ICE_GATHER_HOST_GRACE_MS = 80;     // after first host candidate, wait this long for siblings
 
-const BASE_RTC_CONFIG = {
+const RTC_CONFIG = {
   iceServers: [],
   bundlePolicy: 'max-bundle',
 };
-
-// Cached promise so concurrent publish/play calls share a single fetch.
-let _rtcConfigPromise = null;
-
-/**
- * Resolve the RTCConfiguration to use for new PeerConnections. Fetches the
- * server-provided iceServers exactly once. Failures fall back to the empty
- * default — better to attempt with host candidates than block the whole call.
- */
-function getRtcConfig() {
-  if (_rtcConfigPromise) return _rtcConfigPromise;
-  _rtcConfigPromise = (async () => {
-    try {
-      const resp = await fetch('/api/rtc-config', { cache: 'no-store' });
-      if (!resp.ok) return { ...BASE_RTC_CONFIG };
-      const data = await resp.json();
-      const ice = Array.isArray(data && data.iceServers) ? data.iceServers : [];
-      return { ...BASE_RTC_CONFIG, iceServers: ice };
-    } catch (_) {
-      return { ...BASE_RTC_CONFIG };
-    }
-  })();
-  return _rtcConfigPromise;
-}
-
-/**
- * Force the cached config to be reloaded on the next PeerConnection. Mainly
- * useful for tests; normal pages can ignore this.
- */
-export function resetRtcConfigCache() {
-  _rtcConfigPromise = null;
-}
-
-/**
- * Eagerly prefetch the WebRTC config so the very first publish/play does not
- * wait on /api/rtc-config. Cheap to call multiple times.
- */
-export function prefetchRtcConfig() {
-  return getRtcConfig();
-}
 
 /**
  * Publish a local MediaStream to ZLM via the signaling server.
@@ -72,8 +32,7 @@ export function prefetchRtcConfig() {
  * @returns {Promise<{pc: RTCPeerConnection, streamId: string}>}
  */
 export async function publishStream({ signaling, stream, kind, streamId, solo, onState }) {
-  const config = await getRtcConfig();
-  const pc = new RTCPeerConnection(config);
+  const pc = new RTCPeerConnection(RTC_CONFIG);
 
   // Add transceivers (send-only) so SDP m-line ordering matches ZLM expectations.
   for (const track of stream.getTracks()) {
@@ -118,8 +77,7 @@ export async function publishStream({ signaling, stream, kind, streamId, solo, o
  * @returns {Promise<{pc: RTCPeerConnection, streamId: string}>}
  */
 export async function playStream({ signaling, targetUserId, kind, streamId, solo, onTrack, onState }) {
-  const config = await getRtcConfig();
-  const pc = new RTCPeerConnection(config);
+  const pc = new RTCPeerConnection(RTC_CONFIG);
 
   // Recvonly transceivers for audio + video so ZLM sends both tracks back.
   pc.addTransceiver('audio', { direction: 'recvonly' });
@@ -193,8 +151,8 @@ function waitIceGathering(pc) {
       }
       const text = ev.candidate.candidate || '';
       // Host candidates are local-only and ready almost instantly. On a LAN
-      // they are sufficient for connectivity, and even with STUN configured
-      // they make up the fast path; trim the gathering wait once we have one.
+      // they are sufficient for connectivity; trim the gathering wait once
+      // we have one, allowing siblings (multi-NIC) a short grace window.
       if (text.indexOf(' typ host') !== -1 && !graceTimer) {
         graceTimer = setTimeout(finish, ICE_GATHER_HOST_GRACE_MS);
       }

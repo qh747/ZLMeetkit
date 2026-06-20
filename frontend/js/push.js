@@ -5,8 +5,9 @@
 import { Signaling } from './signaling.js';
 import { publishStream, closePC } from './webrtc.js';
 
+const room = sessionStorage.getItem('zlm.room') || '';
 const streamId = sessionStorage.getItem('zlm.streamId') || '';
-if (!streamId) {
+if (!room || !streamId) {
   location.href = 'index.html';
 }
 
@@ -20,8 +21,10 @@ const state = {
   joined: false,
 };
 
-document.getElementById('streamLabel').textContent = streamId;
+document.getElementById('streamLabel').textContent = `${room} / ${streamId}`;
 document.getElementById('streamNameInfo').textContent = streamId;
+const appNameEl = document.getElementById('appName');
+if (appNameEl) appNameEl.textContent = room;
 
 const statusEl = document.getElementById('streamState');
 const recEl = document.getElementById('recIndicator');
@@ -68,9 +71,10 @@ async function main() {
   state.signaling.on('_close', () => setStatus('信令已断开', true, 0));
   await state.signaling.connect();
 
-  // Solo room: room id == stream id; backend caps at 1 client.
+  // Solo room: the user-supplied room name doubles as the ZLM app, so
+  // publishers and players in the same room share the same stream group.
   state.signaling.send('join', {
-    room: 'solo_' + streamId,
+    room,
     nickname: 'publisher',
     mode: 'solo',
   });

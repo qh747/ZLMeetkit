@@ -13,7 +13,13 @@ import (
 	"zlm_meet/backend/pkg/config"
 )
 
+// defaultVhost is hard-coded because vhost multi-tenancy is out of scope for
+// this project; the ZLM default is fine for every supported deployment.
+const defaultVhost = "__defaultVhost__"
+
 // Client wraps the subset of ZLMediaKit's REST API that the signaling server needs.
+// The ZLM "app" is supplied per-call by the caller, mapped from the front-end
+// "room" input, so it is not stored on the client.
 type Client struct {
 	cfg        config.ZLMConfig
 	httpClient *http.Client
@@ -25,9 +31,6 @@ func New(cfg config.ZLMConfig) *Client {
 		httpClient: &http.Client{Timeout: 10 * time.Second},
 	}
 }
-
-// App returns the ZLM application name where all meeting streams live.
-func (c *Client) App() string { return c.cfg.App }
 
 // WebRTCType identifies whether SDP exchange is for browser publishing or playing.
 type WebRTCType string
@@ -47,15 +50,14 @@ type webrtcResponse struct {
 }
 
 // ExchangeSDP performs a WebRTC SDP offer/answer exchange with ZLM and returns
-// the answer SDP. `stream` should be unique per (room, user, kind) tuple.
-func (c *Client) ExchangeSDP(rtcType WebRTCType, stream, offerSDP string) (string, error) {
+// the answer SDP. `app` is the ZLM stream group (front-end "room") and
+// `stream` is unique within that app.
+func (c *Client) ExchangeSDP(rtcType WebRTCType, app, stream, offerSDP string) (string, error) {
 	q := url.Values{}
-	q.Set("app", c.cfg.App)
+	q.Set("app", app)
 	q.Set("stream", stream)
 	q.Set("type", string(rtcType))
-	if c.cfg.Vhost != "" {
-		q.Set("vhost", c.cfg.Vhost)
-	}
+	q.Set("vhost", defaultVhost)
 
 	endpoint := strings.TrimRight(c.cfg.APIBase, "/") + "/index/api/webrtc?" + q.Encode()
 
@@ -109,44 +111,24 @@ const (
 
 // recordResponse mirrors the JSON shape of /startRecord, /stopRecord, /isRecording.
 type recordResponse struct {
-	Code   int  `json:"code"`
+	Code   int    `json:"code"`
 	Msg    string `json:"msg"`
-	Result bool `json:"result"`
+	Result bool   `json:"result"`
 }
 
-// StartRecord asks ZLM to begin recording `stream`. Returns nil on success.
-// `recordType` controls the container (MP4 by default).
-func (c *Client) StartRecord(stream string, recordType RecordType) error {
-	q := url.Values{}
-	q.Set("secret", c.cfg.Secret)
-	q.Set("type", fmt.Sprintf("%d", recordType))
-	q.Set("vhost", c.cfg.Vhost)
-	q.Set("app", c.cfg.App)
-	q.Set("stream", stream)
-	return c.recordCall("/index/api/startRecord", q, "startRecord")
+// StartRecord asks ZLM to begin recording `stream` inside `app`.
+func (c *Client) StartRecord(app, stream string, recordType RecordType) error {
+	return c.recordCall("/index/api/startRecord", c.recordQuery(app, stream, recordType), "startRecord")
 }
 
-// StopRecord asks ZLM to stop recording `stream`. Returns nil on success.
-func (c *Client) StopRecord(stream string, recordType RecordType) error {
-	q := url.Values{}
-	q.Set("secret", c.cfg.Secret)
-	q.Set("type", fmt.Sprintf("%d", recordType))
-	q.Set("vhost", c.cfg.Vhost)
-	q.Set("app", c.cfg.App)
-	q.Set("stream", stream)
-	return c.recordCall("/index/api/stopRecord", q, "stopRecord")
+// StopRecord asks ZLM to stop recording `stream` inside `app`.
+func (c *Client) StopRecord(app, stream string, recordType RecordType) error {
+	return c.recordCall("/index/api/stopRecord", c.recordQuery(app, stream, recordType), "stopRecord")
 }
 
-// IsRecording queries ZLM for the current recording state of `stream`.
-func (c *Client) IsRecording(stream string, recordType RecordType) (bool, error) {
-	q := url.Values{}
-	q.Set("secret", c.cfg.Secret)
-	q.Set("type", fmt.Sprintf("%d", recordType))
-	q.Set("vhost", c.cfg.Vhost)
-	q.Set("app", c.cfg.App)
-	q.Set("stream", stream)
-
-	endpoint := strings.TrimRight(c.cfg.APIBase, "/") + "/index/api/isRecording?" + q.Encode()
+// IsRecording queries ZLM for the current recording state.
+func (c *Client) IsRecording(app, stream string, recordType RecordType) (bool, error) {
+	endpoint := strings.TrimRight(c.cfg.APIBase, "/") + "/index/api/isRecording?" + c.recordQuery(app, stream, recordType).Encode()
 	resp, err := c.httpClient.Post(endpoint, "application/json", bytes.NewReader(nil))
 	if err != nil {
 		return false, fmt.Errorf("call isRecording: %w", err)
@@ -164,6 +146,16 @@ func (c *Client) IsRecording(stream string, recordType RecordType) (bool, error)
 		return false, fmt.Errorf("zlm isRecording error code=%d msg=%s", parsed.Code, parsed.Msg)
 	}
 	return parsed.Result, nil
+}
+
+func (c *Client) recordQuery(app, stream string, recordType RecordType) url.Values {
+	q := url.Values{}
+	q.Set("secret", c.cfg.Secret)
+	q.Set("type", fmt.Sprintf("%d", recordType))
+	q.Set("vhost", defaultVhost)
+	q.Set("app", app)
+	q.Set("stream", stream)
+	return q
 }
 
 func (c *Client) recordCall(path string, q url.Values, label string) error {
@@ -190,13 +182,13 @@ func (c *Client) recordCall(path string, q url.Values, label string) error {
 	return nil
 }
 
-// CloseStream forcibly closes a single stream (all schemas). Used when a user
-// leaves the room or stops sharing their screen.
-func (c *Client) CloseStream(stream string) error {
+// CloseStream forcibly closes a single stream (all schemas) within `app`.
+// Used when a user leaves the room or stops sharing their screen.
+func (c *Client) CloseStream(app, stream string) error {
 	q := url.Values{}
 	q.Set("secret", c.cfg.Secret)
-	q.Set("vhost", c.cfg.Vhost)
-	q.Set("app", c.cfg.App)
+	q.Set("vhost", defaultVhost)
+	q.Set("app", app)
 	q.Set("stream", stream)
 	q.Set("force", "1")
 
