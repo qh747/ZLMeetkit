@@ -128,19 +128,34 @@ func (r *Room) removeClient(c *Client) {
 
 	log.Printf("[room %s] leave: %s", r.ID, c.UserID)
 
-	// Collect streams + active recordings under client lock.
+	// Collect streams + active recordings under client lock. We also keep the
+	// kind→sid mapping so we can broadcast peer-stream-stopped before the
+	// peer-left event, giving remaining clients an immediate signal to tear
+	// down their RTCPeerConnection (avoiding the multi-second ICE timeout).
 	c.mu.Lock()
-	streams := make([]string, 0, len(c.streams))
-	recording := make([]string, 0, len(c.recordings))
+	type streamEntry struct{ Kind, StreamID string }
+	entries := make([]streamEntry, 0, len(c.streams))
+	sids := make([]string, 0, len(c.streams))
+	recordSids := make([]string, 0, len(c.recordings))
 	for kind, sid := range c.streams {
-		streams = append(streams, sid)
+		entries = append(entries, streamEntry{Kind: kind, StreamID: sid})
+		sids = append(sids, sid)
 		if c.recordings[kind] {
-			recording = append(recording, sid)
+			recordSids = append(recordSids, sid)
 		}
 	}
 	c.streams = make(map[string]string)
 	c.recordings = make(map[string]bool)
 	c.mu.Unlock()
+
+	// Broadcast peer-stream-stopped for every stream BEFORE peer-left, so
+	// watching clients clean up immediately instead of waiting for ICE timeout.
+	for _, e := range entries {
+		r.broadcastStreamStopped(c, e.Kind, e.StreamID)
+	}
+	if r.isBroadcast() {
+		r.broadcastExcept(c.UserID, TypePeerLeft, PeerLeftPayload{UserID: c.UserID})
+	}
 
 	// Stop recording then close streams on ZLM, off the hot path.
 	app := r.ID
@@ -155,11 +170,7 @@ func (r *Room) removeClient(c *Client) {
 				log.Printf("[room %s] close stream %s: %v", r.ID, sid, err)
 			}
 		}
-	}(recording, streams)
-
-	if r.isBroadcast() {
-		r.broadcastExcept(c.UserID, TypePeerLeft, PeerLeftPayload{UserID: c.UserID})
-	}
+	}(recordSids, sids)
 
 	r.hub.removeRoomIfEmpty(r)
 }
@@ -223,9 +234,6 @@ func (r *Room) broadcastStreamStarted(c *Client, kind, streamID string) {
 }
 
 func (r *Room) broadcastStreamStopped(c *Client, kind, streamID string) {
-	if !r.isBroadcast() {
-		return
-	}
 	r.broadcastExcept(c.UserID, TypePeerStreamStopped, PeerStreamPayload{
 		UserID:   c.UserID,
 		Kind:     kind,

@@ -45,6 +45,13 @@ async function main() {
   state.signaling = new Signaling(`${scheme}//${host}/ws`);
   state.signaling.on('error', (p) => setStatus('服务器：' + p.message, true));
   state.signaling.on('_close', () => setStatus('信令已断开', true, 0));
+  state.signaling.on('peer-stream-stopped', (p) => {
+    if (state.pull && state.pull.streamId === p.streamId) {
+      stopPull('推流已停止');
+    }
+  });
+  // Fallback: publisher left the room without stream-stopped (tab close / crash).
+  state.signaling.on('peer-left', () => stopPull('推流方已离开'));
   await state.signaling.connect();
 
   // Same room (ZLM app) as the publisher so the back end can locate the
@@ -63,11 +70,7 @@ async function main() {
 
 async function toggleStream() {
   if (state.pull) {
-    try { closePC(state.pull.pc); } catch (_) {}
-    state.pull = null;
-    remoteVideo.srcObject = null;
-    statusEl.textContent = '已停止';
-    document.getElementById('btnStart').querySelector('.label').textContent = '开始拉流';
+    stopPull();
     return;
   }
   statusEl.textContent = '拉流中…';
@@ -79,7 +82,9 @@ async function toggleStream() {
       onTrack: (s) => { remoteVideo.srcObject = s; },
       onState: (s) => {
         statusEl.textContent = '连接状态：' + s;
-        if (s === 'failed') setStatus('拉流连接失败', true, 0);
+        if (s === 'failed' || s === 'disconnected') {
+          stopPull(s === 'failed' ? '拉流连接断开' : '拉流连接断开');
+        }
       },
     });
     statusEl.textContent = '拉流已建立';
@@ -88,6 +93,16 @@ async function toggleStream() {
     setStatus('拉流失败：' + err.message, true, 0);
     statusEl.textContent = '失败';
   }
+}
+
+function stopPull(msg) {
+  if (!state.pull) return;
+  try { closePC(state.pull.pc); } catch (_) {}
+  state.pull = null;
+  remoteVideo.srcObject = null;
+  statusEl.textContent = '已停止';
+  document.getElementById('btnStart').querySelector('.label').textContent = '开始拉流';
+  if (msg) setStatus(msg, false);
 }
 
 function leave({ navigate = false } = {}) {

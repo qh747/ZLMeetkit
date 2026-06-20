@@ -387,10 +387,14 @@ func (c *Client) handleStreamStopped(env *Envelope) error {
 	c.mu.Unlock()
 
 	if sid != "" {
-		if err := c.hub.zlm.CloseStream(c.room.ID, sid); err != nil {
-			log.Printf("[client %s] close stream %s: %v", c.UserID, sid, err)
-		}
+		// Broadcast first so watching clients tear down immediately — don't
+		// wait for the ZLM HTTP call to complete.
 		c.room.broadcastStreamStopped(c, p.Kind, sid)
+		go func(app, streamID string) {
+			if err := c.hub.zlm.CloseStream(app, streamID); err != nil {
+				log.Printf("[client %s] close stream %s: %v", c.UserID, streamID, err)
+			}
+		}(c.room.ID, sid)
 	}
 	return nil
 }
