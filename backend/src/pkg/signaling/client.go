@@ -306,9 +306,15 @@ func (c *Client) handleWebRTCOffer(env *Envelope) error {
 		if p.TargetUserID == "" {
 			return errors.New("targetUserId is required for play")
 		}
+		if p.Kind != "cam" && p.Kind != "screen" {
+			return fmt.Errorf("invalid kind for play: %q", p.Kind)
+		}
 		streamID = c.room.targetStreamID(p.TargetUserID, p.Kind)
 		if streamID == "" {
-			return fmt.Errorf("no published stream for user=%s kind=%s", p.TargetUserID, p.Kind)
+			// Publisher may still be negotiating push. Fall back to the
+			// deterministic stream name so watchers can retry play in parallel
+			// with push setup instead of waiting for stream-started.
+			streamID = buildStreamID(p.TargetUserID, p.Kind)
 		}
 		rtcType = zlm.WebRTCPlay
 	case "publish-solo":
@@ -339,6 +345,18 @@ func (c *Client) handleWebRTCOffer(env *Envelope) error {
 	answerSDP, err := c.hub.zlm.ExchangeSDP(rtcType, c.room.ID, streamID, p.SDP)
 	if err != nil {
 		return fmt.Errorf("zlm sdp exchange: %w", err)
+	}
+
+	// Room publish: register the stream and notify peers immediately so they
+	// can start play without waiting for the publisher's stream-started message.
+	if p.Mode == "publish" {
+		c.mu.Lock()
+		prev := c.streams[p.Kind]
+		c.streams[p.Kind] = streamID
+		c.mu.Unlock()
+		if prev != streamID {
+			c.room.broadcastStreamStarted(c, p.Kind, streamID)
+		}
 	}
 
 	c.send(TypeWebRTCAnswer, env.ReqID, WebRTCAnswerPayload{

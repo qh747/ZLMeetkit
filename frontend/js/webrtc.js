@@ -53,10 +53,9 @@ export async function publishStream({ signaling, stream, kind, streamId, solo, o
   const reply = await signaling.request('webrtc-offer', reqPayload);
   await pc.setRemoteDescription({ type: 'answer', sdp: reply.sdp });
 
-  // Notify other peers (room modes only; solo rooms get a no-op broadcast on the server).
-  if (!solo) {
-    signaling.send('stream-started', { kind, streamId: reply.streamId });
-  } else {
+  // Room modes: server broadcasts peer-stream-started on publish success.
+  // Solo still notifies via stream-started for players in the same app.
+  if (solo) {
     signaling.send('stream-started', { kind: 'solo', streamId: reply.streamId });
   }
 
@@ -108,8 +107,21 @@ export async function playStream({ signaling, targetUserId, kind, streamId, solo
     : { mode: 'play', kind, targetUserId, sdp: pc.localDescription.sdp };
   const reply = await signaling.request('webrtc-offer', reqPayload);
   await pc.setRemoteDescription({ type: 'answer', sdp: reply.sdp });
+  applyLowLatencyPlayout(pc);
 
   return { pc, streamId: reply.streamId };
+}
+
+/** Minimize receiver jitter buffer where the browser supports it. */
+function applyLowLatencyPlayout(pc) {
+  try {
+    for (const tr of pc.getTransceivers()) {
+      const rx = tr.receiver;
+      if (rx && 'playoutDelayHint' in rx) {
+        rx.playoutDelayHint = 0;
+      }
+    }
+  } catch (_) {}
 }
 
 /**

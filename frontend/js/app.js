@@ -86,7 +86,14 @@ async function main() {
 
   // Capture promise — no await yet, so connect() can race with it.
   const mediaPromise = navigator.mediaDevices
-    .getUserMedia({ audio: true, video: true })
+    .getUserMedia({
+      audio: true,
+      video: {
+        width: { ideal: 640 },
+        height: { ideal: 480 },
+        frameRate: { ideal: 24, max: 30 },
+      },
+    })
     .catch((err) => {
       ui.showStatus('无法访问摄像头/麦克风：' + err.message, { error: true, durationMs: 0 });
       throw err;
@@ -108,30 +115,31 @@ async function main() {
     mode: state.mode,
   });
 
-  // (3) Local media ready → render self tile and wire toolbar so user can
-  //     toggle mic/cam even while publish is still negotiating.
+  // (3) Local media ready → publish first so existing peers can pull ASAP,
+  //     then render self tile and wire toolbar.
   const localStream = await mediaPromise;
   state.localCamStream = localStream;
+
+  const publishPromise = publishStream({
+    signaling: state.signaling,
+    stream: localStream,
+    kind: 'cam',
+    onState: (s) => {
+      if (s === 'failed' || s === 'disconnected') {
+        ui.showStatus('上行连接异常，请检查 ZLM WebRTC 配置', { error: true, durationMs: 0 });
+      }
+    },
+  }).then((result) => {
+    state.camPub = result;
+  }).catch((err) => {
+    ui.showStatus('推流失败：' + err.message, { error: true, durationMs: 0 });
+    throw err;
+  });
+
   ui.upsertTile('self', { nickname: state.myNickname + '（我）', isSelf: true, stream: localStream });
   wireToolbar();
 
-  // (4) Publish our cam+mic. Pulls of existing peers may already be in
-  //     flight; this just adds our outbound stream to the mix.
-  try {
-    state.camPub = await publishStream({
-      signaling: state.signaling,
-      stream: localStream,
-      kind: 'cam',
-      onState: (s) => {
-        if (s === 'failed' || s === 'disconnected') {
-          ui.showStatus('上行连接异常，请检查 ZLM WebRTC 配置', { error: true, durationMs: 0 });
-        }
-      },
-    });
-  } catch (err) {
-    ui.showStatus('推流失败：' + err.message, { error: true, durationMs: 0 });
-    throw err;
-  }
+  await publishPromise;
 }
 
 function buildWsURL() {
@@ -160,6 +168,8 @@ function wireSignalHandlers(sig) {
   sig.on('peer-joined', (p) => {
     ensurePeer(p.userId, p.nickname);
     ui.appendSystem(`${p.nickname} 加入了`);
+    // Preemptively pull cam while the joiner is still opening camera/publish.
+    startPullingPeerStream(p.userId, p.nickname, 'cam', { preemptive: true });
   });
 
   sig.on('peer-left', (p) => {
@@ -229,35 +239,65 @@ function ensurePeer(userId, nickname) {
   return peer;
 }
 
-async function startPullingPeerStream(userId, nickname, kind) {
+async function startPullingPeerStream(userId, nickname, kind, { preemptive = false } = {}) {
   const peer = ensurePeer(userId, nickname);
-  if (peer[kind]) return; // already pulling
+  if (peer[kind]) return;
+  const inflightKey = `${kind}Pulling`;
+  if (peer[inflightKey]) return peer[inflightKey];
+
   const tileKey = `peer-${userId}-${kind}`;
   ui.upsertTile(tileKey, {
     nickname: peer.nickname,
     isScreen: kind === 'screen',
   });
 
-  try {
-    const result = await playStream({
-      signaling: state.signaling,
-      targetUserId: userId,
-      kind,
-      onTrack: (stream) => {
-        ui.upsertTile(tileKey, { stream });
-      },
-      onState: (s) => {
-        if (s === 'failed') {
-          ui.showStatus(`拉取 ${peer.nickname}/${kind} 失败`, { error: true });
-        }
-      },
-    });
-    peer[kind] = result;
-  } catch (err) {
-    console.warn(`[pull ${userId}/${kind}]`, err);
-    ui.showStatus(`拉流失败：${err.message}`, { error: true });
+  peer[inflightKey] = pullPeerStreamWithRetry(userId, nickname, kind, tileKey, preemptive)
+    .finally(() => { delete peer[inflightKey]; });
+  return peer[inflightKey];
+}
+
+async function pullPeerStreamWithRetry(userId, nickname, kind, tileKey, preemptive) {
+  const peer = ensurePeer(userId, nickname);
+  const maxAttempts = preemptive ? 25 : 1;
+  const retryDelayMs = 180;
+  let lastErr;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (peer[kind]) return;
+    try {
+      const result = await playStream({
+        signaling: state.signaling,
+        targetUserId: userId,
+        kind,
+        onTrack: (stream) => {
+          ui.upsertTile(tileKey, { stream });
+        },
+        onState: (s) => {
+          if (s === 'failed') {
+            ui.showStatus(`拉取 ${peer.nickname}/${kind} 失败`, { error: true });
+          }
+        },
+      });
+      peer[kind] = result;
+      return;
+    } catch (err) {
+      lastErr = err;
+      if (attempt + 1 >= maxAttempts) break;
+      await sleep(retryDelayMs);
+    }
+  }
+
+  console.warn(`[pull ${userId}/${kind}]`, lastErr);
+  if (!preemptive) {
+    ui.showStatus(`拉流失败：${lastErr.message}`, { error: true });
+  }
+  if (!peer[kind]) {
     ui.removeTile(tileKey);
   }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 // === Toolbar wiring ==========================================================
