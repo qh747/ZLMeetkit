@@ -46,6 +46,183 @@
 - 会议/通话：后端自动生成流名 `user_<userId>_cam` / `user_<userId>_screen`。
 - 独立推/拉流：用户自定义流名（仅字母数字、`_`、`-`、`.`，最长 128 字符）。
 
+## 业务交互流程
+
+以下描述从用户进入页面到媒体连通的完整路径。四种业务均先建立 **WebSocket**（`/ws`），再通过信令驱动 **ZLM WebRTC SDP 交换**；音视频数据不经过 Go 后端，由浏览器与 ZLM 直连。
+
+### 通用步骤
+
+1. 首页填写表单 → 昵称/房间号/流名写入 `sessionStorage` → 跳转业务页
+2. 业务页连接 `wss://<信令服务>/ws`（或 `ws://`）
+3. 发送 `join`：`room` 映射为 ZLM `app`，`mode` 决定房间语义与人数上限
+4. 媒体协商：客户端发 `webrtc-offer`（含 SDP）→ 服务端转发 ZLM `/index/api/webrtc` → 回 `webrtc-answer`
+5. 离开：发 `leave` 或断开 WS → 服务端停止录制、关闭该用户关联流
+
+---
+
+### 1. 多人会议（`meeting.html`，`mode=meeting`）
+
+**适用场景**：同一房间号下多人互相看到/听到彼此，支持屏幕共享与聊天。
+
+```mermaid
+sequenceDiagram
+    participant A as 用户 A
+    participant S as 信令服务
+    participant Z as ZLMediaKit
+    participant B as 用户 B
+
+    A->>S: join {room, nickname, mode:meeting}
+    S-->>A: joined {peers:[]}
+    par 并行
+        A->>A: getUserMedia（摄像头/麦克风）
+        A->>S: webrtc-offer publish cam
+        S->>Z: SDP 交换 push
+        Z-->>S: answer SDP
+        S-->>A: webrtc-answer
+        S-->>B: peer-stream-started（A 推流成功后）
+    end
+
+    B->>S: join {room, nickname, mode:meeting}
+    S-->>B: joined {peers:[A 及已有流列表]}
+    par B 并行拉取已有成员
+        B->>S: webrtc-offer play（targetUserId=A, kind=cam）
+        S->>Z: SDP 交换 play
+        Z-->>B: 远端音视频
+    and B 推自己的 cam
+        B->>S: webrtc-offer publish cam
+        S->>Z: SDP 交换 push
+        S-->>A: peer-stream-started（B）
+        A->>S: webrtc-offer play（targetUserId=B）
+    end
+```
+
+**详细流程**
+
+| 阶段 | 动作 |
+|------|------|
+| 入会 | 连接 WS → `join` → 收到 `joined`（含已在房成员及其 `streams`） |
+| 本端推流 | `getUserMedia` 与信令**并行**；拿到本地流后 `webrtc-offer`（`mode=publish`，`kind=cam`）→ 流名 `user_<userId>_cam` |
+| 拉取他人 | 对 `joined.peers` 中每个已有流发 `webrtc-offer`（`mode=play`）；新成员加入时收到 `peer-joined` 即**预拉**其 cam |
+| 屏幕共享 | 用户点「共享屏幕」→ `getDisplayMedia` → `publish`（`kind=screen`）→ 他人收到 `peer-stream-started` 后拉 `screen` |
+| 状态同步 | 开关麦克风/摄像头 → `media-state` → 他人收到 `peer-state`；文字 → `chat` 广播（聊天未打开时按钮显示红点） |
+| 录制 | `record-start/stop`（`kind=cam\|screen`）→ 服务端调 ZLM 录制 → 停止后 `record-state` 带 `recordFileUrl`，前端预览/下载 |
+| 离开 | `leave` → 广播 `peer-stream-stopped` + `peer-left` → 服务端停止录制并 `close_streams` |
+
+---
+
+### 2. 1v1 通话（`call.html`，`mode=call`）
+
+**与多人会议的信令/媒体路径相同**，差异仅在房间策略与 UI：
+
+| 差异点 | 说明 |
+|--------|------|
+| 人数 | 服务端 `capacity=2`，第三人 `join` 返回错误 |
+| 布局 | 大画面显示对端，右下角小窗显示自己（`call-layout`） |
+| 功能裁剪 | 隐藏「屏幕共享」按钮；仍支持画质切换、录制、聊天 |
+| 流命名 | 与会议相同：`user_<userId>_cam` |
+
+```mermaid
+sequenceDiagram
+    participant A as 用户 A
+    participant S as 信令服务
+    participant B as 用户 B
+
+    A->>S: join {room, mode:call}
+    S-->>A: joined
+    B->>S: join {room, mode:call}
+    S-->>B: joined {peers:[A]}
+    Note over A,B: 双方 publish cam + play 对端 cam（同会议流程）
+    A->>S: chat / media-state / record-start …
+    S-->>B: 广播给房间内另一人
+```
+
+---
+
+### 3. 独立推流（`push.html`，`mode=solo`）
+
+**适用场景**：仅向 ZLM 推送一路流，无需与其他浏览器用户互动；推/拉方可共用同一 `room`（ZLM `app`）。
+
+```mermaid
+sequenceDiagram
+    participant P as 推流端
+    participant S as 信令服务
+    participant Z as ZLMediaKit
+
+    P->>P: getUserMedia（本地预览）
+    P->>S: join {room, nickname:publisher, mode:solo}
+    S-->>P: joined
+    Note over P: 用户点击「开始推流」
+    P->>S: webrtc-offer publish-solo {streamId, sdp}
+    S->>Z: SDP 交换 push（app=room, stream=streamId）
+    Z-->>P: answer SDP
+    S-->>P: webrtc-answer
+    P->>S: stream-started {kind:solo, streamId}
+    Note over P: 可选：record-start → ZLM MP4 录制
+```
+
+**详细流程**
+
+| 阶段 | 动作 |
+|------|------|
+| 准备 | 首页输入**房间号 + 流名** → `push.html` 打开摄像头本地预览 |
+| 入会 | `join`（`mode=solo`）；solo 房间**不广播** peer/chat 事件 |
+| 推流 | 点击「开始推流」→ `webrtc-offer`（`mode=publish-solo`，携带用户输入的 `streamId`） |
+| 停止 | 点击「停止推流」→ `stream-stopped` → 关闭 PeerConnection |
+| 录制 | 须先推流；`record-start/stop` 传 `streamId`；停止后可预览/下载 MP4 |
+| 离开 | `leave` → 自动停录、关流 |
+
+> 拉流端须使用**相同房间号 + 相同流名**才能播放。
+
+---
+
+### 4. 独立拉流（`play.html`，`mode=solo`）
+
+**适用场景**：从 ZLM 播放指定流，不采集本机摄像头。
+
+```mermaid
+sequenceDiagram
+    participant P as 推流端
+    participant S as 信令服务
+    participant Z as ZLMediaKit
+    participant L as 拉流端
+
+    P->>Z: publish-solo（已在推流）
+    L->>S: join {room, nickname:player, mode:solo}
+    S-->>L: joined
+    Note over L: 用户点击「开始拉流」
+    L->>S: webrtc-offer play-solo {streamId, sdp}
+    S->>Z: SDP 交换 play
+    Z-->>L: 远端音视频
+    P->>S: stream-stopped / leave
+    S-->>L: peer-stream-stopped 或 peer-left
+    L->>L: 停止拉流、清空画面
+```
+
+**详细流程**
+
+| 阶段 | 动作 |
+|------|------|
+| 准备 | 首页输入与推流端一致的**房间号 + 流名** |
+| 入会 | `join`（`mode=solo`），页面显示「已就绪」 |
+| 拉流 | 点击「开始拉流」→ `webrtc-offer`（`mode=play-solo`，`streamId`）→ 渲染到 `<video>` |
+| 停止 | 点击「停止拉流」→ 关闭 PeerConnection |
+| 推流方离线 | 收到 `peer-stream-stopped` 或 `peer-left` → 自动停止拉流并提示 |
+
+> solo 模式下推流端与多个拉流端可**同时** `join` 同一 `room`（同一 ZLM `app`），互不占会议/通话的名额。
+
+---
+
+### 四种业务对比
+
+| | 会议 | 1v1 | 推流 | 拉流 |
+|---|:---:|:---:|:---:|:---:|
+| 需要昵称 | ✓ | ✓ | — | — |
+| 需要流名 | — | — | ✓ | ✓ |
+| 人数上限 | 无 | 2 | 无（同 app 可多客户端） | 同左 |
+| 本端采集 | ✓ | ✓ | ✓ | — |
+| 房间广播（chat/peer-*） | ✓ | ✓ | — | — |
+| SDP 模式 | publish / play | 同左 | publish-solo | play-solo |
+
 ## 功能清单
 
 ### 首页与通用
@@ -289,7 +466,7 @@ zlm_meet/
 | 现象                         | 排查方向                                                               |
 |------------------------------|------------------------------------------------------------------------|
 | 信令连不上                   | 后端是否已启动；URL 中 `http/https` 与 `ws/wss` 是否匹配              |
-| 推流失败                     | ZLM 是否开启 WebRTC；`api_base` 与 `secret` 是否正确；UDP 8000 是否可达 |
+| 推流失败                     | ZLM 是否开启 WebRTC；`api_base` 与 `secret` 是否正确；UDP 端口是否可达 |
 | 看不到自己                   | 浏览器是否授予摄像头权限；当前页是否在 `https` 或 `localhost` 下       |
 | 看不到对方                   | ZLM 控制台是否有对应 stream；浏览器控制台是否有 `play` 失败日志        |
 | Chrome 提示 ICE failed       | `webrtc.externIP` 是否填写正确；防火墙是否拦截 UDP                     |
