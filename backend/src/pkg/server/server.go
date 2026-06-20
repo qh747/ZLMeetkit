@@ -30,6 +30,19 @@ func New(cfg *config.Config, hub *signaling.Hub) http.Handler {
 		_, _ = w.Write([]byte("ok"))
 	})
 
+	// /api/rtc-config exposes WebRTC runtime knobs (currently iceServers) so
+	// the static front end can adapt to LAN / internet deployments without a
+	// rebuild. The front end fetches this once at startup and feeds the
+	// values straight into RTCPeerConnection.
+	rtcConfigPayload, _ := json.Marshal(map[string]any{
+		"iceServers": cfg.WebRTC.IceServers,
+	})
+	mux.HandleFunc("/api/rtc-config", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write(rtcConfigPayload)
+	})
+
 	mux.HandleFunc("/debug/rooms", func(w http.ResponseWriter, r *http.Request) {
 		// Lightweight introspection; do not expose in production.
 		w.Header().Set("Content-Type", "application/json")

@@ -16,8 +16,8 @@
 
 ## 项目特点
 
-- 依托 ZLMediaKit 作为媒体网关，WebRTC 推拉流开箱即用，无需自行实现 SFU。
-- 后端使用 Go + Gorilla WebSocket 实现信令，代码极简，易于二次开发。
+- 依托 ZLMediaKit 作为媒体服务，WebRTC 推拉流开箱即用，无需自行实现 SFU。
+- 后端使用 Go + WebSocket 实现信令，代码极简，易于二次开发。
 - 前端零构建依赖，纯原生 HTML/JS，浏览器直开即用。
 - 每个用户独立推流（`cam` + 可选 `screen`），其他人各自订阅，互不耦合。
 - 流名称由后端统一生成（`room_<roomId>_user_<userId>_<kind>`），客户端无需关心命名。

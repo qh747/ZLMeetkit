@@ -8,7 +8,7 @@
 //   - Render UI updates via MeetingUI.
 
 import { Signaling } from './signaling.js';
-import { publishStream, playStream, closePC } from './webrtc.js';
+import { publishStream, playStream, closePC, prefetchRtcConfig } from './webrtc.js';
 import { MeetingUI } from './ui.js';
 
 // Resolve mode: meeting.html uses 'meeting'; call.html uses 'call'.
@@ -60,33 +60,58 @@ main().catch((err) => {
 });
 
 async function main() {
-  // 1) Local capture first so the user sees themselves immediately.
-  let localStream;
-  try {
-    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-  } catch (err) {
-    ui.showStatus('无法访问摄像头/麦克风：' + err.message, { error: true, durationMs: 0 });
-    throw err;
-  }
-  state.localCamStream = localStream;
-  ui.upsertTile('self', { nickname: state.myNickname + '（我）', isSelf: true, stream: localStream });
+  // First-frame latency budget: we run the slow paths in parallel so a fresh
+  // joiner can start pulling existing peers' video while their own camera is
+  // still warming up.
+  //
+  //   ┌── getUserMedia (200~1500ms on cold start)
+  //   ├── /api/rtc-config prefetch (cached for later PCs)
+  //   └── WebSocket connect → send 'join' → 'joined' → playStream(peer.*) ──┐
+  //                                                                         │
+  //                 once getUserMedia resolves: upsert self tile, publish ──┘
 
-  // 2) Connect WebSocket signaling.
+  // Kick off the WebRTC config fetch immediately so the first PeerConnection
+  // doesn't pay for it.
+  prefetchRtcConfig();
+
+  // (1) Start signaling + media in parallel.
   const wsURL = buildWsURL();
   state.signaling = new Signaling(wsURL);
-  wireSignalHandlers(state.signaling);
+  wireSignalHandlers(state.signaling); // listeners must be registered before connect() resolves
+
+  // Capture promise — no await yet, so connect() can race with it.
+  const mediaPromise = navigator.mediaDevices
+    .getUserMedia({ audio: true, video: true })
+    .catch((err) => {
+      ui.showStatus('无法访问摄像头/麦克风：' + err.message, { error: true, durationMs: 0 });
+      throw err;
+    });
+
+  // (2) Connect WS, then send `join`. The server immediately replies with
+  //     `joined` (handled by wireSignalHandlers), which kicks off pulling
+  //     existing peers' streams — all of this happens before getUserMedia
+  //     resolves on slow devices.
   try {
     await state.signaling.connect();
   } catch (err) {
     ui.showStatus('信令连接失败：' + err.message, { error: true, durationMs: 0 });
     throw err;
   }
+  state.signaling.send('join', {
+    room: state.room,
+    nickname: state.myNickname,
+    mode: state.mode,
+  });
 
-  // 3) Join the room and wait for the `joined` reply (it's fire-and-forget but
-  //    the server will respond with a `joined` message handled below).
-  state.signaling.send('join', { room: state.room, nickname: state.myNickname, mode: state.mode });
+  // (3) Local media ready → render self tile and wire toolbar so user can
+  //     toggle mic/cam even while publish is still negotiating.
+  const localStream = await mediaPromise;
+  state.localCamStream = localStream;
+  ui.upsertTile('self', { nickname: state.myNickname + '（我）', isSelf: true, stream: localStream });
+  wireToolbar();
 
-  // 4) Publish our cam+mic.
+  // (4) Publish our cam+mic. Pulls of existing peers may already be in
+  //     flight; this just adds our outbound stream to the mix.
   try {
     state.camPub = await publishStream({
       signaling: state.signaling,
@@ -102,8 +127,6 @@ async function main() {
     ui.showStatus('推流失败：' + err.message, { error: true, durationMs: 0 });
     throw err;
   }
-
-  wireToolbar();
 }
 
 function buildWsURL() {

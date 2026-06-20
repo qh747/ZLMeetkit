@@ -1,12 +1,63 @@
 // webrtc.js — thin wrappers around RTCPeerConnection for publish and play
 // against ZLMediaKit. All SDP exchange goes through the signaling server.
+//
+// Latency-sensitive notes:
+//   - ZLMediaKit does not support trickle ICE, so we still have to bake all
+//     candidates into the offer SDP before sending. To avoid the historical
+//     ~2s stall on every PeerConnection we exit `waitIceGathering` as soon as
+//     a usable host candidate is collected (the only kind that matters on
+//     LAN), and cap the absolute wait at ICE_GATHER_TIMEOUT_MS.
+//   - iceServers is fetched lazily from the backend (/api/rtc-config) once
+//     per page so deployments can opt-in to STUN/TURN without a JS rebuild.
+//     Default is empty for LAN deployments where host candidates are enough.
 
-const DEFAULT_RTC_CONFIG = {
-  // Public STUN keeps local-network testing working. For LAN-only the default
-  // host candidates from `iceTransportPolicy: 'all'` are usually enough.
-  iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+const ICE_GATHER_TIMEOUT_MS = 300;       // hard cap: we'd rather try with what we have
+const ICE_GATHER_HOST_GRACE_MS = 80;     // after first host candidate, wait this long for siblings
+
+const BASE_RTC_CONFIG = {
+  iceServers: [],
   bundlePolicy: 'max-bundle',
 };
+
+// Cached promise so concurrent publish/play calls share a single fetch.
+let _rtcConfigPromise = null;
+
+/**
+ * Resolve the RTCConfiguration to use for new PeerConnections. Fetches the
+ * server-provided iceServers exactly once. Failures fall back to the empty
+ * default — better to attempt with host candidates than block the whole call.
+ */
+function getRtcConfig() {
+  if (_rtcConfigPromise) return _rtcConfigPromise;
+  _rtcConfigPromise = (async () => {
+    try {
+      const resp = await fetch('/api/rtc-config', { cache: 'no-store' });
+      if (!resp.ok) return { ...BASE_RTC_CONFIG };
+      const data = await resp.json();
+      const ice = Array.isArray(data && data.iceServers) ? data.iceServers : [];
+      return { ...BASE_RTC_CONFIG, iceServers: ice };
+    } catch (_) {
+      return { ...BASE_RTC_CONFIG };
+    }
+  })();
+  return _rtcConfigPromise;
+}
+
+/**
+ * Force the cached config to be reloaded on the next PeerConnection. Mainly
+ * useful for tests; normal pages can ignore this.
+ */
+export function resetRtcConfigCache() {
+  _rtcConfigPromise = null;
+}
+
+/**
+ * Eagerly prefetch the WebRTC config so the very first publish/play does not
+ * wait on /api/rtc-config. Cheap to call multiple times.
+ */
+export function prefetchRtcConfig() {
+  return getRtcConfig();
+}
 
 /**
  * Publish a local MediaStream to ZLM via the signaling server.
@@ -21,7 +72,8 @@ const DEFAULT_RTC_CONFIG = {
  * @returns {Promise<{pc: RTCPeerConnection, streamId: string}>}
  */
 export async function publishStream({ signaling, stream, kind, streamId, solo, onState }) {
-  const pc = new RTCPeerConnection(DEFAULT_RTC_CONFIG);
+  const config = await getRtcConfig();
+  const pc = new RTCPeerConnection(config);
 
   // Add transceivers (send-only) so SDP m-line ordering matches ZLM expectations.
   for (const track of stream.getTracks()) {
@@ -34,7 +86,6 @@ export async function publishStream({ signaling, stream, kind, streamId, solo, o
 
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
-  // Wait for ICE gathering to complete so the SDP has all candidates inline.
   await waitIceGathering(pc);
 
   const reqPayload = solo
@@ -67,7 +118,8 @@ export async function publishStream({ signaling, stream, kind, streamId, solo, o
  * @returns {Promise<{pc: RTCPeerConnection, streamId: string}>}
  */
 export async function playStream({ signaling, targetUserId, kind, streamId, solo, onTrack, onState }) {
-  const pc = new RTCPeerConnection(DEFAULT_RTC_CONFIG);
+  const config = await getRtcConfig();
+  const pc = new RTCPeerConnection(config);
 
   // Recvonly transceivers for audio + video so ZLM sends both tracks back.
   pc.addTransceiver('audio', { direction: 'recvonly' });
@@ -102,19 +154,56 @@ export async function playStream({ signaling, targetUserId, kind, streamId, solo
   return { pc, streamId: reply.streamId };
 }
 
-/** Resolves when ICE gathering for `pc` reaches 'complete', or after 2s. */
+/**
+ * Wait until the SDP has enough ICE candidates baked in. Returns as early as
+ * possible to minimise first-frame latency — see ICE_* constants above.
+ *
+ *  - If gathering is already 'complete', resolve immediately.
+ *  - On the first 'host' candidate, wait ICE_GATHER_HOST_GRACE_MS for any
+ *    siblings (multi-NIC machines) and then resolve.
+ *  - Hard timeout at ICE_GATHER_TIMEOUT_MS regardless.
+ *  - If 'icecandidate' fires with `null` (end-of-candidates), resolve
+ *    immediately.
+ */
 function waitIceGathering(pc) {
   if (pc.iceGatheringState === 'complete') return Promise.resolve();
   return new Promise((resolve) => {
-    const done = () => {
-      pc.removeEventListener('icegatheringstatechange', check);
-      clearTimeout(timer);
+    let settled = false;
+    let graceTimer = null;
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      pc.removeEventListener('icegatheringstatechange', onState);
+      pc.removeEventListener('icecandidate', onCandidate);
+      if (graceTimer) clearTimeout(graceTimer);
+      clearTimeout(hardTimer);
       resolve();
     };
-    const check = () => { if (pc.iceGatheringState === 'complete') done(); };
-    pc.addEventListener('icegatheringstatechange', check);
-    // Hard timeout so we don't hang forever on unreachable STUN.
-    const timer = setTimeout(done, 2000);
+
+    const onState = () => {
+      if (pc.iceGatheringState === 'complete') finish();
+    };
+
+    const onCandidate = (ev) => {
+      // null candidate signals end-of-candidates → no point waiting longer.
+      if (!ev.candidate) {
+        finish();
+        return;
+      }
+      const text = ev.candidate.candidate || '';
+      // Host candidates are local-only and ready almost instantly. On a LAN
+      // they are sufficient for connectivity, and even with STUN configured
+      // they make up the fast path; trim the gathering wait once we have one.
+      if (text.indexOf(' typ host') !== -1 && !graceTimer) {
+        graceTimer = setTimeout(finish, ICE_GATHER_HOST_GRACE_MS);
+      }
+    };
+
+    pc.addEventListener('icegatheringstatechange', onState);
+    pc.addEventListener('icecandidate', onCandidate);
+
+    const hardTimer = setTimeout(finish, ICE_GATHER_TIMEOUT_MS);
   });
 }
 

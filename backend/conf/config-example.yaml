@@ -12,6 +12,17 @@ static_dir: "../frontend"
 # 允许的 WebSocket Origin，留空表示不校验（开发用）
 allowed_origins: []
 
+# 浏览器 WebRTC 运行时配置（前端启动时通过 /api/rtc-config 读取）
+# 局域网/直连场景留空即可（host candidate 已经够用，不配 STUN 反而能更快完成 ICE gathering）。
+# 公网部署时再按需添加 STUN/TURN，例如：
+#   ice_servers:
+#     - urls: ["stun:stun.l.google.com:19302"]
+#     - urls: ["turn:turn.example.com:3478"]
+#       username: "user"
+#       credential: "pass"
+webrtc:
+  ice_servers: []
+
 # ZLMediaKit 配置
 zlm:
   # ZLM HTTP API 基地址（带 http:// 前缀，不带末尾 /）

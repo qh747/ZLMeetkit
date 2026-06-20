@@ -14,13 +14,29 @@ type ZLMConfig struct {
 	Vhost   string `yaml:"vhost"`
 }
 
+// IceServer mirrors the browser RTCIceServer dictionary so the front end can
+// consume it directly.
+type IceServer struct {
+	URLs       []string `yaml:"urls" json:"urls"`
+	Username   string   `yaml:"username,omitempty" json:"username,omitempty"`
+	Credential string   `yaml:"credential,omitempty" json:"credential,omitempty"`
+}
+
+// WebRTCConfig holds runtime knobs the front end fetches at startup. Keeping
+// these on the server avoids hard-coding STUN/TURN inside the static JS so the
+// same build can run on LAN and on the public internet.
+type WebRTCConfig struct {
+	IceServers []IceServer `yaml:"ice_servers" json:"iceServers"`
+}
+
 type Config struct {
-	Listen         string    `yaml:"listen"`
-	TLSCert        string    `yaml:"tls_cert"`
-	TLSKey         string    `yaml:"tls_key"`
-	StaticDir      string    `yaml:"static_dir"`
-	AllowedOrigins []string  `yaml:"allowed_origins"`
-	ZLM            ZLMConfig `yaml:"zlm"`
+	Listen         string       `yaml:"listen"`
+	TLSCert        string       `yaml:"tls_cert"`
+	TLSKey         string       `yaml:"tls_key"`
+	StaticDir      string       `yaml:"static_dir"`
+	AllowedOrigins []string     `yaml:"allowed_origins"`
+	ZLM            ZLMConfig    `yaml:"zlm"`
+	WebRTC         WebRTCConfig `yaml:"webrtc"`
 }
 
 // Load reads configuration from a YAML file, applying defaults.
@@ -44,6 +60,11 @@ func Load(path string) (*Config, error) {
 	}
 	if c.ZLM.Vhost == "" {
 		c.ZLM.Vhost = "__defaultVhost__"
+	}
+	if c.WebRTC.IceServers == nil {
+		// Marshalling nil slice yields JSON `null`; emit an explicit empty
+		// array so the front end can skip null-checks.
+		c.WebRTC.IceServers = []IceServer{}
 	}
 	return c, nil
 }
