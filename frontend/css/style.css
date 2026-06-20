@@ -229,6 +229,7 @@ input { font-family: inherit; }
   border-top: 1px solid var(--border);
 }
 .toolbar-btn {
+  position: relative;
   background: var(--panel-2);
   color: var(--text);
   border: 1px solid var(--border);
@@ -238,6 +239,18 @@ input { font-family: inherit; }
   align-items: center;
   gap: 6px;
   font-size: 14px;
+}
+.toolbar-btn.has-unread::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+  border: 2px solid var(--panel);
+  pointer-events: none;
 }
 .toolbar-btn .label { font-size: 13px; }
 .toolbar-btn:hover { background: #404552; }

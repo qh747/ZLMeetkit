@@ -6,6 +6,7 @@ export class MeetingUI {
     this.chatPanel = document.getElementById('chatPanel');
     this.chatLog = document.getElementById('chatLog');
     this.chatInput = document.getElementById('chatInput');
+    this.chatBtn = document.getElementById('btnChat');
     this.statusBar = document.getElementById('statusBar');
     this.tiles = new Map(); // key -> { tile, video }
   }
@@ -94,9 +95,21 @@ export class MeetingUI {
     }
   }
 
+  isChatOpen() {
+    return this.chatPanel && !this.chatPanel.classList.contains('hidden');
+  }
+
+  setChatUnread(unread) {
+    if (!this.chatBtn) return;
+    this.chatBtn.classList.toggle('has-unread', !!unread);
+  }
+
   setChatVisible(visible) {
     this.chatPanel.classList.toggle('hidden', !visible);
-    if (visible) this.chatInput.focus();
+    if (visible) {
+      this.chatInput.focus();
+      this.setChatUnread(false);
+    }
   }
 
   appendChat({ nickname, text, ts, isMe }) {

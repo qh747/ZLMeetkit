@@ -210,6 +210,9 @@ function wireSignalHandlers(sig) {
   sig.on('chat', (p) => {
     const isMe = p.from === state.myUserId;
     ui.appendChat({ nickname: p.nickname, text: p.text, ts: p.ts, isMe });
+    if (!isMe && !ui.isChatOpen()) {
+      ui.setChatUnread(true);
+    }
   });
 
   sig.on('record-state', (p) => {
