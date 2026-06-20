@@ -16,6 +16,6 @@ allowed_origins: []
 # 提示：ZLM 流路径中的 app 字段由前端「房间号」决定，不在此处配置。
 zlm:
   # ZLM HTTP API 基地址（带 http:// 前缀，不带末尾 /）
-  api_base: "http://192.168.31.76:8081"
+  api_base: "http://127.0.0.1:8081"
   # ZLM 配置中的 general.secret
   secret: "IqZLFoY9Kbzr2JjkRT3LSDxwzicnvetN"
