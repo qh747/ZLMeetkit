@@ -144,11 +144,13 @@ type RecordControlPayload struct {
 
 // s2c record-state: broadcasted to the room when a stream's recording state
 // changes; also sent as an ack to the controlling client.
+// RecordFileURL is only populated in the ack (stop → the recorded file).
 type RecordStatePayload struct {
-	UserID    string `json:"userId,omitempty"`
-	Kind      string `json:"kind,omitempty"`
-	StreamID  string `json:"streamId"`
-	Recording bool   `json:"recording"`
+	UserID        string `json:"userId,omitempty"`
+	Kind          string `json:"kind,omitempty"`
+	StreamID      string `json:"streamId"`
+	Recording     bool   `json:"recording"`
+	RecordFileURL string `json:"recordFileUrl,omitempty"`
 }
 
 // Message type constants.

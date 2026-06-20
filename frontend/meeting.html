@@ -42,6 +42,21 @@
 
   <div id="statusBar" class="status-bar hidden"></div>
 
+  <!-- Recording preview overlay -->
+  <div id="previewOverlay" class="preview-overlay hidden">
+    <div class="preview-box">
+      <div class="preview-header">
+        <span id="previewTitle">录制预览</span>
+        <button id="previewClose" class="preview-close" title="关闭预览">&times;</button>
+      </div>
+      <video id="previewVideo" class="preview-video" controls playsinline></video>
+      <div class="preview-actions">
+        <button id="previewDownload" class="toolbar-btn" title="下载到本地">⬇️<span class="label">下载</span></button>
+        <button id="previewCloseBtn" class="toolbar-btn danger" title="关闭">✕<span class="label">关闭</span></button>
+      </div>
+    </div>
+  </div>
+
   <script type="module" src="js/app.js"></script>
 </body>
 </html>

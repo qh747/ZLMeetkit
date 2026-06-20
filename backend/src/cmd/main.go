@@ -36,7 +36,12 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("[main] listening on %s (zlm=%s)", cfg.Listen, cfg.ZLM.APIBase)
+		if cfg.TLSCert != "" && cfg.TLSKey != "" {
+			log.Printf("[main] listening on %s (HTTPS, zlm=%s)", cfg.Listen, cfg.ZLM.APIBase)
+			log.Printf("[main] ZLM hook.on_record_mp4 must use https:// — http:// will get 400")
+		} else {
+			log.Printf("[main] listening on %s (HTTP, zlm=%s)", cfg.Listen, cfg.ZLM.APIBase)
+		}
 		var err error
 		if cfg.TLSCert != "" && cfg.TLSKey != "" {
 			err = srv.ListenAndServeTLS(cfg.TLSCert, cfg.TLSKey)

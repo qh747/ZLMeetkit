@@ -48,3 +48,6 @@ func (h *Hub) removeRoomIfEmpty(r *Room) {
 		log.Printf("[hub] room %s removed (empty)", r.ID)
 	}
 }
+
+// ZLM returns the ZLMediaKit client used by this hub.
+func (h *Hub) ZLM() *zlm.Client { return h.zlm }

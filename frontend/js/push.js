@@ -30,6 +30,15 @@ const statusEl = document.getElementById('streamState');
 const recEl = document.getElementById('recIndicator');
 const statusBar = document.getElementById('statusBar');
 
+// Preview overlay elements.
+const previewOverlay = document.getElementById('previewOverlay');
+const previewVideo = document.getElementById('previewVideo');
+const previewClose = document.getElementById('previewClose');
+const previewCloseBtn = document.getElementById('previewCloseBtn');
+const previewDownload = document.getElementById('previewDownload');
+
+let pendingRecordFileUrl = null; // set when record-stop ack arrives
+
 function setStatus(text, error = false, durationMs = 2500) {
   statusBar.textContent = text;
   statusBar.classList.remove('hidden');
@@ -88,6 +97,39 @@ function onRecordState(p) {
   state.recording = !!p.recording;
   recEl.classList.toggle('hidden', !state.recording);
   setBtn('btnRecord', state.recording ? 'recording' : '');
+  // If we just stopped recording and have a file URL, show the preview.
+  if (!state.recording && p.recordFileUrl) {
+    pendingRecordFileUrl = p.recordFileUrl;
+    showPreview(p.recordFileUrl);
+  }
+}
+
+// ── Recording preview ──────────────────────────────────────────────────────────
+
+function showPreview(url) {
+  const proxyURL = '/api/record-file?url=' + encodeURIComponent(url) + '&mode=preview';
+  previewVideo.src = proxyURL;
+  previewOverlay.classList.remove('hidden');
+  // Auto-play the preview.
+  previewVideo.play().catch(() => {});
+}
+
+function closePreview() {
+  previewVideo.pause();
+  previewVideo.src = '';
+  previewOverlay.classList.add('hidden');
+  pendingRecordFileUrl = null;
+}
+
+function downloadPreview() {
+  if (!pendingRecordFileUrl) return;
+  // Derive a friendly filename from the streamId.
+  const filename = streamId + '_' + new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-') + '.mp4';
+  const proxyURL = '/api/record-file?url=' + encodeURIComponent(pendingRecordFileUrl) + '&mode=download&filename=' + encodeURIComponent(filename);
+  const a = document.createElement('a');
+  a.href = proxyURL;
+  a.download = filename;
+  a.click();
 }
 
 function wireToolbar() {
@@ -104,6 +146,10 @@ function wireToolbar() {
   document.getElementById('btnStart').addEventListener('click', toggleStream);
   document.getElementById('btnRecord').addEventListener('click', toggleRecord);
   document.getElementById('btnLeave').addEventListener('click', () => leave({ navigate: true }));
+  // Preview overlay buttons.
+  previewClose.addEventListener('click', closePreview);
+  previewCloseBtn.addEventListener('click', closePreview);
+  previewDownload.addEventListener('click', downloadPreview);
 }
 
 async function toggleStream() {

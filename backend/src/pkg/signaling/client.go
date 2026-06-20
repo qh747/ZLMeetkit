@@ -476,17 +476,17 @@ func (c *Client) handleRecordControl(env *Envelope, start bool) error {
 	}
 
 	// Issue the ZLM REST call (room.ID == ZLM app).
-	var zerr error
 	if start {
-		zerr = c.hub.zlm.StartRecord(c.room.ID, streamID, zlmRecordType())
+		if err := c.hub.zlm.StartRecord(c.room.ID, streamID, zlmRecordType()); err != nil {
+			return fmt.Errorf("zlm record: %w", err)
+		}
 	} else {
-		zerr = c.hub.zlm.StopRecord(c.room.ID, streamID, zlmRecordType())
-	}
-	if zerr != nil {
-		return fmt.Errorf("zlm record: %w", zerr)
+		if err := c.hub.zlm.StopRecord(c.room.ID, streamID, zlmRecordType()); err != nil {
+			return fmt.Errorf("zlm record: %w", err)
+		}
 	}
 
-	// Persist state on the client and broadcast.
+	// Persist state on the client.
 	c.mu.Lock()
 	c.recordings[kind] = start
 	c.mu.Unlock()
@@ -497,6 +497,16 @@ func (c *Client) handleRecordControl(env *Envelope, start bool) error {
 		StreamID:  streamID,
 		Recording: start,
 	}
+
+	// When stopping, resolve the recorded file URL from ZLM (with retries).
+	if !start {
+		if url, err := c.hub.zlm.ResolveLatestRecordURL(c.room.ID, streamID); err != nil {
+			log.Printf("[record] resolve url for %s/%s: %v", c.room.ID, streamID, err)
+		} else {
+			state.RecordFileURL = url
+		}
+	}
+
 	// Ack to the controlling client (with reqId).
 	c.send(TypeRecordState, env.ReqID, state)
 	// Broadcast to other peers in the room (no-op for solo rooms).

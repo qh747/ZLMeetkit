@@ -466,3 +466,61 @@ input { font-family: inherit; }
   .solo-stage { flex-direction: column; }
   .solo-info { flex: 0 0 auto; }
 }
+
+/* ============ Recording preview overlay ============ */
+.preview-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  padding: 16px;
+}
+.preview-overlay.hidden { display: none; }
+.preview-box {
+  background: var(--panel);
+  border-radius: 12px;
+  overflow: hidden;
+  width: min(640px, 100vw - 32px);
+  box-shadow: 0 16px 60px rgba(0,0,0,0.6);
+}
+.preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+}
+.preview-close {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 22px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+.preview-close:hover { color: var(--text); }
+.preview-video {
+  display: block;
+  width: 100%;
+  background: #000;
+  max-height: 70vh;
+}
+.preview-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 16px;
+}
+.preview-actions .toolbar-btn {
+  font-size: 13px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  min-width: 0;
+  height: auto;
+}

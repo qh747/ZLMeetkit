@@ -38,6 +38,16 @@ const state = {
   peers: new Map(),
 };
 
+// Recording preview overlay (shared with push page markup).
+const previewOverlay = document.getElementById('previewOverlay');
+const previewVideo = document.getElementById('previewVideo');
+const previewTitle = document.getElementById('previewTitle');
+const previewClose = document.getElementById('previewClose');
+const previewCloseBtn = document.getElementById('previewCloseBtn');
+const previewDownload = document.getElementById('previewDownload');
+let pendingRecordFileUrl = null;
+let pendingRecordKind = 'cam';
+
 if (!state.room || !state.myNickname) {
   location.href = 'index.html';
 }
@@ -188,18 +198,9 @@ function wireSignalHandlers(sig) {
   });
 
   sig.on('record-state', (p) => {
-    // Server broadcasts when any peer toggles recording, including self ack.
-    if (p.userId === state.myUserId || !p.userId) {
-      // Self ack: update the relevant local tile + button.
-      if (p.kind === 'cam') {
-        state.camRecording = p.recording;
-        ui.upsertTile('self', { recording: p.recording });
-        ui.setButtonState('btnRecord', p.recording ? 'recording' : '');
-      } else if (p.kind === 'screen') {
-        state.screenRecording = p.recording;
-        ui.upsertTile('self-screen', { recording: p.recording });
-        ui.setButtonState('btnRecordScreen', p.recording ? 'recording' : '');
-      }
+    // Broadcasts from peers (self ack is handled by toggleRecord via request()).
+    if (p.userId === state.myUserId) {
+      applyRecordState(p);
       return;
     }
     // Peer record-state: highlight the tile.
@@ -291,6 +292,59 @@ function wireToolbar() {
   // Reflect initial state.
   ui.setButtonState('btnMic', state.micOn ? '' : 'off');
   ui.setButtonState('btnCam', state.camOn ? '' : 'off');
+
+  if (previewClose) previewClose.addEventListener('click', closePreview);
+  if (previewCloseBtn) previewCloseBtn.addEventListener('click', closePreview);
+  if (previewDownload) previewDownload.addEventListener('click', downloadPreview);
+}
+
+function applyRecordState(p) {
+  if (!p) return;
+  if (p.kind === 'cam') {
+    state.camRecording = !!p.recording;
+    ui.upsertTile('self', { recording: p.recording });
+    ui.setButtonState('btnRecord', p.recording ? 'recording' : '');
+  } else if (p.kind === 'screen') {
+    state.screenRecording = !!p.recording;
+    ui.upsertTile('self-screen', { recording: p.recording });
+    ui.setButtonState('btnRecordScreen', p.recording ? 'recording' : '');
+  }
+  if (!p.recording && p.recordFileUrl) {
+    pendingRecordFileUrl = p.recordFileUrl;
+    pendingRecordKind = p.kind || 'cam';
+    showPreview(p.recordFileUrl, pendingRecordKind);
+  } else if (!p.recording && !p.recordFileUrl) {
+    ui.showStatus('录制已停止，但未获取到文件地址', { error: true });
+  }
+}
+
+function showPreview(url, kind) {
+  if (!previewOverlay || !previewVideo) return;
+  const label = kind === 'screen' ? '屏幕录制预览' : '录制预览';
+  if (previewTitle) previewTitle.textContent = label;
+  previewVideo.src = '/api/record-file?url=' + encodeURIComponent(url) + '&mode=preview';
+  previewOverlay.classList.remove('hidden');
+  previewVideo.play().catch(() => {});
+}
+
+function closePreview() {
+  if (!previewOverlay || !previewVideo) return;
+  previewVideo.pause();
+  previewVideo.src = '';
+  previewOverlay.classList.add('hidden');
+  pendingRecordFileUrl = null;
+}
+
+function downloadPreview() {
+  if (!pendingRecordFileUrl) return;
+  const prefix = pendingRecordKind === 'screen' ? 'screen' : 'cam';
+  const filename = `${state.room}_${prefix}_${new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-')}.mp4`;
+  const proxyURL = '/api/record-file?url=' + encodeURIComponent(pendingRecordFileUrl)
+    + '&mode=download&filename=' + encodeURIComponent(filename);
+  const a = document.createElement('a');
+  a.href = proxyURL;
+  a.download = filename;
+  a.click();
 }
 
 async function toggleRecord(kind) {
@@ -303,20 +357,7 @@ async function toggleRecord(kind) {
   }
   try {
     const reply = await state.signaling.request(type, { kind });
-    // The ack arrives as type=record-state with our reqId; signaling.request
-    // intercepts it so the listener never fires. Apply the same state update
-    // here so the toolbar reflects the change immediately.
-    if (reply) {
-      if (reply.kind === 'cam') {
-        state.camRecording = !!reply.recording;
-        ui.upsertTile('self', { recording: reply.recording });
-        ui.setButtonState('btnRecord', reply.recording ? 'recording' : '');
-      } else if (reply.kind === 'screen') {
-        state.screenRecording = !!reply.recording;
-        ui.upsertTile('self-screen', { recording: reply.recording });
-        ui.setButtonState('btnRecordScreen', reply.recording ? 'recording' : '');
-      }
-    }
+    applyRecordState(reply);
   } catch (err) {
     ui.showStatus(`录制操作失败：${err.message}`, { error: true });
   }
@@ -342,6 +383,12 @@ function toggleCam() {
 
 async function toggleScreen() {
   if (state.screenPub) {
+    if (state.screenRecording) {
+      try {
+        const reply = await state.signaling.request('record-stop', { kind: 'screen' });
+        applyRecordState(reply);
+      } catch (_) {}
+    }
     // Stop sharing.
     try { closePC(state.screenPub.pc); } catch (_) {}
     if (state.localScreenStream) {
