@@ -13,6 +13,8 @@ import {
   wireQualityUI,
 } from './quality.js';
 
+import { initSoloLayout } from './solo-layout.js';
+
 const room = sessionStorage.getItem('zlm.room') || '';
 const streamId = sessionStorage.getItem('zlm.streamId') || '';
 if (!room || !streamId) {
@@ -64,6 +66,8 @@ function setBtn(id, cls) {
 }
 
 window.addEventListener('beforeunload', () => leave());
+
+initSoloLayout();
 
 main().catch((err) => {
   console.error(err);

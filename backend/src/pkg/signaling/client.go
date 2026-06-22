@@ -347,9 +347,9 @@ func (c *Client) handleWebRTCOffer(env *Envelope) error {
 		return fmt.Errorf("zlm sdp exchange: %w", err)
 	}
 
-	// Room publish: register the stream and notify peers immediately so they
-	// can start play without waiting for the publisher's stream-started message.
-	if p.Mode == "publish" {
+	// Register published streams so entry-check and play can resolve them.
+	switch p.Mode {
+	case "publish":
 		c.mu.Lock()
 		prev := c.streams[p.Kind]
 		c.streams[p.Kind] = streamID
@@ -357,6 +357,10 @@ func (c *Client) handleWebRTCOffer(env *Envelope) error {
 		if prev != streamID {
 			c.room.broadcastStreamStarted(c, p.Kind, streamID)
 		}
+	case "publish-solo":
+		c.mu.Lock()
+		c.streams["solo"] = streamID
+		c.mu.Unlock()
 	}
 
 	c.send(TypeWebRTCAnswer, env.ReqID, WebRTCAnswerPayload{

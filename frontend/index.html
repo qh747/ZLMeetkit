@@ -84,114 +84,142 @@
     </dialog>
   </main>
 
-  <script>
-    (function () {
-      const dialog = document.getElementById('formDialog');
-      const form = document.getElementById('bizForm');
-      const title = document.getElementById('formTitle');
-      const roomLabel = document.getElementById('roomLabel');
-      const fields = {
-        nickname: form.querySelector('[data-field="nickname"]'),
-        room: form.querySelector('[data-field="room"]'),
-        stream: form.querySelector('[data-field="stream"]'),
-      };
-      const inputs = {
-        nickname: document.getElementById('nickname'),
-        room: document.getElementById('room'),
-        stream: document.getElementById('streamId'),
-      };
+  <script type="module">
+    import { showAppAlert } from './js/ui-alert.js';
 
-      const SAVED_NAME = sessionStorage.getItem('zlm.nickname') || '';
-      if (SAVED_NAME) inputs.nickname.value = SAVED_NAME;
-      const SAVED_ROOM = sessionStorage.getItem('zlm.room') || '';
-      if (SAVED_ROOM) inputs.room.value = SAVED_ROOM;
+    const dialog = document.getElementById('formDialog');
+    const form = document.getElementById('bizForm');
+    const title = document.getElementById('formTitle');
+    const roomLabel = document.getElementById('roomLabel');
+    const fields = {
+      nickname: form.querySelector('[data-field="nickname"]'),
+      room: form.querySelector('[data-field="room"]'),
+      stream: form.querySelector('[data-field="stream"]'),
+    };
+    const inputs = {
+      nickname: document.getElementById('nickname'),
+      room: document.getElementById('room'),
+      stream: document.getElementById('streamId'),
+    };
 
-      let currentBiz = null;
+    const SAVED_NAME = sessionStorage.getItem('zlm.nickname') || '';
+    if (SAVED_NAME) inputs.nickname.value = SAVED_NAME;
+    const SAVED_ROOM = sessionStorage.getItem('zlm.room') || '';
+    if (SAVED_ROOM) inputs.room.value = SAVED_ROOM;
 
-      function showFields(map) {
-        for (const key of Object.keys(fields)) {
-          fields[key].style.display = map[key] ? '' : 'none';
-          inputs[key].required = !!map[key];
+    let currentBiz = null;
+
+    function showFields(map) {
+      for (const key of Object.keys(fields)) {
+        fields[key].style.display = map[key] ? '' : 'none';
+        inputs[key].required = !!map[key];
+      }
+    }
+
+    function openBiz(biz) {
+      currentBiz = biz;
+      switch (biz) {
+        case 'meeting':
+          title.textContent = '加入多人会议';
+          roomLabel.textContent = '房间号';
+          showFields({ nickname: true, room: true, stream: false });
+          inputs.room.placeholder = '比如 1001';
+          break;
+        case 'call':
+          title.textContent = '加入 1v1 通话';
+          roomLabel.textContent = '通话编号';
+          showFields({ nickname: true, room: true, stream: false });
+          inputs.room.placeholder = '比如 alice-bob';
+          break;
+        case 'push':
+          title.textContent = '推流';
+          roomLabel.textContent = '房间号';
+          showFields({ nickname: false, room: true, stream: true });
+          inputs.room.placeholder = '比如 live';
+          if (!inputs.stream.value) inputs.stream.value = 'pub_' + Date.now();
+          break;
+        case 'play':
+          title.textContent = '拉流';
+          roomLabel.textContent = '房间号';
+          showFields({ nickname: false, room: true, stream: true });
+          inputs.room.placeholder = '比如 live';
+          break;
+      }
+      if (typeof dialog.showModal === 'function') {
+        dialog.showModal();
+      } else {
+        dialog.setAttribute('open', '');
+      }
+    }
+
+    document.querySelectorAll('.home-card').forEach((btn) => {
+      btn.addEventListener('click', () => openBiz(btn.dataset.biz));
+    });
+    document.getElementById('formCancel').addEventListener('click', () => {
+      dialog.close();
+    });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const nickname = inputs.nickname.value.trim();
+      const room = inputs.room.value.trim();
+      const stream = inputs.stream.value.trim();
+
+      if (currentBiz === 'meeting' || currentBiz === 'call') {
+        if (!nickname || !room) return;
+      } else if (currentBiz === 'push' || currentBiz === 'play') {
+        if (!room) return;
+        if (!isSafeStream(stream)) {
+          await showAppAlert('流名只能包含字母、数字、下划线、连字符或点', { title: '格式错误' });
+          return;
         }
       }
 
-      function openBiz(biz) {
-        currentBiz = biz;
-        switch (biz) {
-          case 'meeting':
-            title.textContent = '加入多人会议';
-            roomLabel.textContent = '房间号';
-            showFields({ nickname: true, room: true, stream: false });
-            inputs.room.placeholder = '比如 1001';
-            break;
-          case 'call':
-            title.textContent = '加入 1v1 通话';
-            roomLabel.textContent = '通话编号';
-            showFields({ nickname: true, room: true, stream: false });
-            inputs.room.placeholder = '比如 alice-bob';
-            break;
-          case 'push':
-            title.textContent = '推流';
-            roomLabel.textContent = '房间号';
-            showFields({ nickname: false, room: true, stream: true });
-            inputs.room.placeholder = '比如 live';
-            if (!inputs.stream.value) inputs.stream.value = 'pub_' + Date.now();
-            break;
-          case 'play':
-            title.textContent = '拉流';
-            roomLabel.textContent = '房间号';
-            showFields({ nickname: false, room: true, stream: true });
-            inputs.room.placeholder = '比如 live';
-            break;
+      const submitBtn = form.querySelector('button[type="submit"]');
+      submitBtn.disabled = true;
+      try {
+        const resp = await fetch('/api/entry-check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            biz: currentBiz,
+            room,
+            nickname: nickname || undefined,
+            streamId: stream || undefined,
+          }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || !data.ok) {
+          await showAppAlert(data.message || '无法进入，请稍后重试', { title: '无法进入' });
+          return;
         }
-        if (typeof dialog.showModal === 'function') {
-          dialog.showModal();
-        } else {
-          dialog.setAttribute('open', '');
-        }
+      } catch (_) {
+        await showAppAlert('无法连接信令服务，请确认服务已启动', { title: '连接失败' });
+        return;
+      } finally {
+        submitBtn.disabled = false;
       }
 
-      document.querySelectorAll('.home-card').forEach((btn) => {
-        btn.addEventListener('click', () => openBiz(btn.dataset.biz));
-      });
-      document.getElementById('formCancel').addEventListener('click', () => {
-        dialog.close();
-      });
-
-      form.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const nickname = inputs.nickname.value.trim();
-        const room = inputs.room.value.trim();
-        const stream = inputs.stream.value.trim();
-
-        if (currentBiz === 'meeting' || currentBiz === 'call') {
-          if (!nickname || !room) return;
-          sessionStorage.setItem('zlm.nickname', nickname);
-          sessionStorage.setItem('zlm.room', room);
-          location.href = currentBiz === 'meeting' ? 'meeting.html' : 'call.html';
-        } else if (currentBiz === 'push' || currentBiz === 'play') {
-          if (!room) return;
-          if (!isSafeStream(stream)) {
-            alert('流名只能包含字母、数字、下划线、连字符或点');
-            return;
-          }
-          sessionStorage.setItem('zlm.room', room);
-          sessionStorage.setItem('zlm.streamId', stream);
-          location.href = currentBiz === 'push' ? 'push.html' : 'play.html';
-        }
-      });
-
-      function isSafeStream(s) {
-        return /^[A-Za-z0-9_.\-]{1,128}$/.test(s);
+      if (currentBiz === 'meeting' || currentBiz === 'call') {
+        sessionStorage.setItem('zlm.nickname', nickname);
+        sessionStorage.setItem('zlm.room', room);
+        location.href = currentBiz === 'meeting' ? 'meeting.html' : 'call.html';
+      } else if (currentBiz === 'push' || currentBiz === 'play') {
+        sessionStorage.setItem('zlm.room', room);
+        sessionStorage.setItem('zlm.streamId', stream);
+        location.href = currentBiz === 'push' ? 'push.html' : 'play.html';
       }
+    });
 
-      // Allow ?biz=xxx deep-link.
-      const params = new URLSearchParams(location.search);
-      const biz = params.get('biz');
-      if (biz && ['meeting', 'call', 'push', 'play'].includes(biz)) {
-        openBiz(biz);
-      }
-    })();
+    function isSafeStream(s) {
+      return /^[A-Za-z0-9_.\-]{1,128}$/.test(s);
+    }
+
+    const params = new URLSearchParams(location.search);
+    const biz = params.get('biz');
+    if (biz && ['meeting', 'call', 'push', 'play'].includes(biz)) {
+      openBiz(biz);
+    }
   </script>
 </body>
 </html>

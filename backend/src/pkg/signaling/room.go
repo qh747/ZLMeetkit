@@ -49,6 +49,35 @@ func (r *Room) size() int {
 	return len(r.clients)
 }
 
+// hasNickname reports whether a connected client already uses the nickname.
+func (r *Room) hasNickname(nickname string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, c := range r.clients {
+		if c.Nickname == nickname {
+			return true
+		}
+	}
+	return false
+}
+
+// hasStreamID reports whether any client in the room is publishing streamID.
+func (r *Room) hasStreamID(streamID string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, c := range r.clients {
+		c.mu.RLock()
+		for _, sid := range c.streams {
+			if sid == streamID {
+				c.mu.RUnlock()
+				return true
+			}
+		}
+		c.mu.RUnlock()
+	}
+	return false
+}
+
 // snapshotPeers returns the metadata other peers should see when joining.
 // Excludes the caller (passed in as `excludeID`).
 func (r *Room) snapshotPeers(excludeID string) []PeerInfo {

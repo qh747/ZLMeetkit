@@ -2,6 +2,7 @@
 
 import { Signaling } from './signaling.js';
 import { playStream, closePC } from './webrtc.js';
+import { initSoloLayout } from './solo-layout.js';
 
 const room = sessionStorage.getItem('zlm.room') || '';
 const streamId = sessionStorage.getItem('zlm.streamId') || '';
@@ -33,6 +34,8 @@ function setStatus(text, error = false, durationMs = 2500) {
 }
 
 window.addEventListener('beforeunload', () => leave());
+
+initSoloLayout();
 
 main().catch((err) => {
   console.error(err);

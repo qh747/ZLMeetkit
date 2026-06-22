@@ -49,5 +49,13 @@ func (h *Hub) removeRoomIfEmpty(r *Room) {
 	}
 }
 
+// GetRoom returns an active room by id, or nil if none exists.
+func (h *Hub) GetRoom(id string) (*Room, bool) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	r, ok := h.rooms[id]
+	return r, ok
+}
+
 // ZLM returns the ZLMediaKit client used by this hub.
 func (h *Hub) ZLM() *zlm.Client { return h.zlm }
