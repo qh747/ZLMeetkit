@@ -119,7 +119,6 @@ openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -node
 | [业务说明](./docs/业务说明.md) | 四种业务入口、交互流程、功能清单 |
 | [开发参考](./docs/开发参考.md) | 项目结构、信令协议、快速排错 |
 | [配置](./docs/配置.md) | ZLMediaKit 与信令服务配置说明 |
-| [已知限制](./docs/limitations.md) | 部署与能力边界 |
 
 ## 五、授权协议
 
