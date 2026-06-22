@@ -2,11 +2,18 @@
 
 const MEETING_COLS = 3;
 const MEETING_ASPECT = 16 / 9;
-const FOCUS_GAP = 6;
+const FOCUS_COL_GAP = 3;
 const FOCUS_THUMB_GAP = 4;
 const FOCUS_INSET_X = 16;
 const FOCUS_INSET_Y = 10;
-const FOCUS_MAX_THUMB_W = 192;
+const FOCUS_MAX_THUMB_W = 308;
+const FOCUS_THUMB_MIN_W = 168;
+const FOCUS_MANY_SIDEBAR = 5;
+const FOCUS_MAX_THUMB_W_MANY = 352;
+const FOCUS_THUMB_MIN_W_MANY = 196;
+const FOCUS_THUMB_MIN_H_MANY = 96;
+const FOCUS_MAIN_WIDTH_RATIO = 0.96;
+const FOCUS_MAIN_HEIGHT_RATIO = 0.94;
 
 export class MeetingUI {
   constructor() {
@@ -226,21 +233,23 @@ export class MeetingUI {
     const totalRows = sidebarCount + 1;
 
     this.grid.style.rowGap = `${FOCUS_THUMB_GAP}px`;
-    this.grid.style.columnGap = `${FOCUS_GAP}px`;
+    this.grid.style.columnGap = `${FOCUS_COL_GAP}px`;
     this.grid.style.width = `${innerW}px`;
     this.grid.style.height = `${innerH}px`;
     this.grid.style.margin = `${FOCUS_INSET_Y}px ${FOCUS_INSET_X}px`;
     this.grid.style.justifyContent = 'start';
     this.grid.style.alignContent = 'start';
-    this.grid.style.gridTemplateColumns = `${layout.mainW}px ${layout.sidebarW}px`;
+    this.grid.style.gridTemplateColumns = `minmax(0, 1fr) ${layout.sidebarW}px`;
     this.grid.style.gridTemplateRows = rowTracks;
 
     const mainEntry = this.tiles.get(this.focusedKey);
     mainEntry.tile.classList.add('is-focused');
     mainEntry.tile.style.gridColumn = '1';
     mainEntry.tile.style.gridRow = `1 / span ${totalRows}`;
-    mainEntry.tile.style.width = '100%';
-    mainEntry.tile.style.height = '100%';
+    mainEntry.tile.style.width = `${layout.mainDisplayW}px`;
+    mainEntry.tile.style.height = `${layout.mainDisplayH}px`;
+    mainEntry.tile.style.justifySelf = 'end';
+    mainEntry.tile.style.alignSelf = 'start';
 
     sidebarKeys.forEach((key, index) => {
       const entry = this.tiles.get(key);
@@ -271,23 +280,43 @@ export class MeetingUI {
     mainEntry.tile.style.height = '100%';
   }
 
-  /** Sidebar thumbs 16:9, stacked at top; bottom row absorbs remaining height. */
+  /** Sidebar thumbs ~16:9; larger thumbs when 5+ other participants in focus mode. */
   _computeFocusLayout(sidebarCount, innerW, innerH) {
-    let thumbW = FOCUS_MAX_THUMB_W;
-    let thumbH = Math.floor(thumbW / MEETING_ASPECT);
+    const many = sidebarCount >= FOCUS_MANY_SIDEBAR;
+    const maxThumbW = many ? FOCUS_MAX_THUMB_W_MANY : FOCUS_MAX_THUMB_W;
+    const minThumbW = many ? FOCUS_THUMB_MIN_W_MANY : FOCUS_THUMB_MIN_W;
+    const minThumbH = many ? FOCUS_THUMB_MIN_H_MANY : 84;
+    const maxStackRatio = many ? 0.84 : 0.66;
+    const stackGap = (sidebarCount - 1) * FOCUS_THUMB_GAP;
+    const maxStackH = innerH * maxStackRatio;
 
-    const maxStackH = innerH * 0.52;
-    const stackH = sidebarCount * thumbH + (sidebarCount - 1) * FOCUS_THUMB_GAP;
-    if (stackH > maxStackH) {
-      thumbH = Math.floor((maxStackH - (sidebarCount - 1) * FOCUS_THUMB_GAP) / sidebarCount);
+    let thumbH = Math.floor((maxStackH - stackGap) / sidebarCount);
+    thumbH = Math.max(minThumbH, thumbH);
+    let thumbW = Math.floor(thumbH * MEETING_ASPECT);
+
+    if (thumbW > maxThumbW) {
+      thumbW = maxThumbW;
+      thumbH = Math.floor(thumbW / MEETING_ASPECT);
+    }
+    thumbW = Math.max(minThumbW, thumbW);
+    thumbH = Math.floor(thumbW / MEETING_ASPECT);
+
+    if (!many && sidebarCount * thumbH + stackGap > maxStackH) {
+      thumbH = Math.max(minThumbH, Math.floor((maxStackH - stackGap) / sidebarCount));
       thumbW = Math.floor(thumbH * MEETING_ASPECT);
+      if (thumbW > maxThumbW) {
+        thumbW = maxThumbW;
+        thumbH = Math.floor(thumbW / MEETING_ASPECT);
+      }
     }
 
-    thumbW = Math.max(112, thumbW);
-    thumbH = Math.max(63, thumbH);
     const sidebarW = thumbW;
-    const mainW = Math.max(0, innerW - FOCUS_GAP - sidebarW);
-    return { mainW, sidebarW, thumbW, thumbH };
+    const mainDisplayW = Math.max(
+      0,
+      Math.floor((innerW - FOCUS_COL_GAP - sidebarW) * FOCUS_MAIN_WIDTH_RATIO),
+    );
+    const mainDisplayH = Math.max(0, Math.floor(innerH * FOCUS_MAIN_HEIGHT_RATIO));
+    return { thumbW, thumbH, sidebarW, mainDisplayW, mainDisplayH };
   }
 
   _gridInnerMetrics() {

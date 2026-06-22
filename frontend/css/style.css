@@ -259,7 +259,7 @@ input { font-family: inherit; }
 
 .meeting-page .video-grid.meeting-grid.focus-mode {
   row-gap: 4px;
-  column-gap: 6px;
+  column-gap: 3px;
   justify-items: stretch;
   align-items: start;
   align-content: start;
@@ -267,10 +267,8 @@ input { font-family: inherit; }
 
 .meeting-page .video-grid.meeting-grid.focus-mode .video-tile.is-focused {
   aspect-ratio: auto;
-  justify-self: stretch;
-  align-self: stretch;
-  width: 100%;
-  height: 100%;
+  justify-self: end;
+  align-self: start;
   border-radius: var(--radius-md);
   cursor: pointer;
 }
@@ -281,9 +279,14 @@ input { font-family: inherit; }
 
 .meeting-page .video-grid.meeting-grid.focus-mode .video-tile.is-sidebar {
   aspect-ratio: 16 / 9;
+  width: auto;
   justify-self: start;
   align-self: start;
   border-radius: var(--radius-sm);
+}
+
+.meeting-page .video-grid.meeting-grid.focus-mode .video-tile.is-sidebar video {
+  object-fit: cover;
 }
 
 .meeting-page .video-grid.meeting-grid.focus-mode .video-tile.is-sidebar .name-tag {
@@ -769,8 +772,8 @@ input { font-family: inherit; }
 }
 .call-layout .video-grid .video-tile.is-pip {
   inset: auto 20px 88px auto;
-  width: 240px;
-  height: 135px;
+  width: 360px;
+  height: 203px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border-strong);
   box-shadow: var(--shadow-lg);

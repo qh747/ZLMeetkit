@@ -27,13 +27,25 @@
 
 ## 二、界面预览
 
-| 主页 |
+### 主页
+
+| 业务选择 |
 |:---:|
 | ![主页](./docs/images/主页.png) |
 
-| 1v1 通话 | 多人会议 |
+### 多人会议
+
+| 默认网格 | 双击聚焦（侧栏缩略图） |
 |:---:|:---:|
-| ![1v1 通话](./docs/images/1v1通话.png) | ![视频会议](./docs/images/视频会议.png) |
+| ![视频会议](./docs/images/视频会议.png) | ![视频会议-窗口大小布局](./docs/images/视频会议-大窗口居中.png) |
+
+### 1v1 通话
+
+| 通话 | 聊天 | 录制 |
+|:---:|:---:|:---:|
+| ![1v1 通话](./docs/images/1v1通话.png) | ![1v1 通话-聊天](./docs/images/1v1通话-聊天.png) | ![1v1 通话-录制](./docs/images/1v1通话-录制.png) |
+
+### 推流 / 拉流
 
 | 推流 | 拉流 |
 |:---:|:---:|
@@ -109,6 +121,6 @@ openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -node
 | [配置](./docs/配置.md) | ZLMediaKit 与信令服务配置说明 |
 | [已知限制](./docs/limitations.md) | 部署与能力边界 |
 
-## 四、授权协议
+## 五、授权协议
 
 本项目使用 [MIT](./LICENSE) 协议。
