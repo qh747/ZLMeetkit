@@ -1,4 +1,4 @@
-# zlm_meet
+# ZlmMeet
 
 [![](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 [![](https://img.shields.io/badge/language-Go-blue.svg)](https://golang.org/)
