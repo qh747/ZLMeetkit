@@ -263,9 +263,6 @@ func (r *Room) broadcastMediaState(c *Client) {
 }
 
 func (r *Room) broadcastStreamStarted(c *Client, kind, streamID string) {
-	if !r.isBroadcast() {
-		return
-	}
 	r.broadcastExcept(c.UserID, TypePeerStreamStarted, PeerStreamPayload{
 		UserID:   c.UserID,
 		Kind:     kind,

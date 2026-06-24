@@ -89,7 +89,7 @@ func (c *Client) readLoop() {
 			continue
 		}
 		if err := c.dispatch(&env); err != nil {
-			c.sendError(err.Error())
+			c.replyError(&env, err)
 		}
 	}
 }
@@ -166,6 +166,16 @@ func (c *Client) send(msgType, reqID string, payload any) {
 
 func (c *Client) sendError(msg string) {
 	c.send(TypeError, "", ErrorPayload{Message: msg})
+}
+
+// replyError responds to a client request. When reqId is present the client
+// correlates via its pending map; otherwise fall back to a fire-and-forget error.
+func (c *Client) replyError(env *Envelope, err error) {
+	if env != nil && env.ReqID != "" {
+		c.send(TypeError, env.ReqID, ErrorPayload{Message: err.Error()})
+		return
+	}
+	c.sendError(err.Error())
 }
 
 // dispatch routes incoming messages by type. Returns an error to be sent back
@@ -343,6 +353,9 @@ func (c *Client) handleWebRTCOffer(env *Envelope) error {
 		if !isSafeStreamName(p.StreamID) {
 			return errors.New("streamId contains unsupported characters")
 		}
+		if !c.room.hasStreamID(p.StreamID) {
+			return errors.New(ErrStreamNotFound)
+		}
 		streamID = p.StreamID
 		rtcType = zlm.WebRTCPlay
 	default:
@@ -370,6 +383,7 @@ func (c *Client) handleWebRTCOffer(env *Envelope) error {
 		c.mu.Lock()
 		c.streams["solo"] = streamID
 		c.mu.Unlock()
+		c.room.broadcastStreamStarted(c, "solo", streamID)
 	}
 
 	c.send(TypeWebRTCAnswer, env.ReqID, WebRTCAnswerPayload{

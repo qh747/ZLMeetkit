@@ -82,38 +82,42 @@ export async function publishStream({ signaling, stream, kind, streamId, solo, o
 export async function playStream({ signaling, targetUserId, kind, streamId, solo, onTrack, onState }) {
   const pc = new RTCPeerConnection(RTC_CONFIG);
 
-  // Recvonly transceivers for audio + video so ZLM sends both tracks back.
-  pc.addTransceiver('audio', { direction: 'recvonly' });
-  pc.addTransceiver('video', { direction: 'recvonly' });
+  try {
+    // Recvonly transceivers for audio + video so ZLM sends both tracks back.
+    pc.addTransceiver('audio', { direction: 'recvonly' });
+    pc.addTransceiver('video', { direction: 'recvonly' });
 
-  const remoteStream = new MediaStream();
-  let delivered = false;
-  pc.addEventListener('track', (ev) => {
-    // Use the streams provided by the browser when possible, else assemble manually.
-    if (ev.streams && ev.streams[0]) {
-      if (!delivered) { delivered = true; onTrack(ev.streams[0]); }
-    } else {
-      remoteStream.addTrack(ev.track);
-      if (!delivered) { delivered = true; onTrack(remoteStream); }
+    const remoteStream = new MediaStream();
+    pc.addEventListener('track', (ev) => {
+      const track = ev.track;
+      if (!remoteStream.getTracks().some((t) => t.id === track.id)) {
+        remoteStream.addTrack(track);
+      }
+      // Fire on every track so a late-arriving video track updates the tile
+      // after a republish that adds audio to an existing video-only stream.
+      onTrack(remoteStream);
+    });
+
+    if (onState) {
+      pc.addEventListener('connectionstatechange', () => onState(pc.connectionState));
     }
-  });
 
-  if (onState) {
-    pc.addEventListener('connectionstatechange', () => onState(pc.connectionState));
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    await waitIceGathering(pc);
+
+    const reqPayload = solo
+      ? { mode: 'play-solo', streamId, sdp: pc.localDescription.sdp }
+      : { mode: 'play', kind, targetUserId, sdp: pc.localDescription.sdp };
+    const reply = await signaling.request('webrtc-offer', reqPayload);
+    await pc.setRemoteDescription({ type: 'answer', sdp: reply.sdp });
+    applyLowLatencyPlayout(pc);
+
+    return { pc, streamId: reply.streamId };
+  } catch (err) {
+    try { pc.close(); } catch (_) {}
+    throw err;
   }
-
-  const offer = await pc.createOffer();
-  await pc.setLocalDescription(offer);
-  await waitIceGathering(pc);
-
-  const reqPayload = solo
-    ? { mode: 'play-solo', streamId, sdp: pc.localDescription.sdp }
-    : { mode: 'play', kind, targetUserId, sdp: pc.localDescription.sdp };
-  const reply = await signaling.request('webrtc-offer', reqPayload);
-  await pc.setRemoteDescription({ type: 'answer', sdp: reply.sdp });
-  applyLowLatencyPlayout(pc);
-
-  return { pc, streamId: reply.streamId };
 }
 
 /** Minimize receiver jitter buffer where the browser supports it. */

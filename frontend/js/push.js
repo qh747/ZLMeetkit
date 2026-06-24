@@ -11,6 +11,7 @@ import {
   replaceVideoTrackInPC,
   swapStreamVideoTrack,
   wireQualityUI,
+  syncQualityButtonLabel,
 } from './quality.js';
 import { showAppAlert } from './ui-alert.js';
 
@@ -34,6 +35,8 @@ const state = {
   joined: false,
   myUserId: '',
 };
+
+syncQualityButtonLabel(() => state.quality);
 
 document.getElementById('streamLabel').textContent = `${room} / ${streamId}`;
 document.getElementById('streamNameInfo').textContent = streamId;
@@ -162,7 +165,10 @@ async function main() {
   state.signaling.on('_close', () => setStatus('信令已断开', true, 0));
   state.signaling.on('joined', (p) => { state.myUserId = p.userId; });
   await state.signaling.connect();
-  wireSoloChat(state.signaling, () => state.myUserId);
+  wireSoloChat(state.signaling, () => state.myUserId, {
+    canOpenChat: () => !!state.pub,
+    chatBlockedMessage: '请先开始推流后再使用聊天',
+  });
 
   // Solo room: the user-supplied room name doubles as the ZLM app, so
   // publishers and players in the same room share the same stream group.

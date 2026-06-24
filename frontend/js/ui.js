@@ -118,8 +118,10 @@ export class MeetingUI {
       entry.nameTag.textContent = opts.nickname + (opts.isScreen ? '（屏幕）' : '');
     }
     if (opts.stream !== undefined) {
-      if (entry.video.srcObject !== opts.stream) {
-        entry.video.srcObject = opts.stream;
+      entry.video.srcObject = opts.stream;
+      if (opts.stream && opts.stream.getVideoTracks().length > 0) {
+        entry.tile.classList.remove('no-video');
+        entry.video.play().catch(() => {});
       }
     }
     if (opts.recording !== undefined) {

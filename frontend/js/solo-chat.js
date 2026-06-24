@@ -1,6 +1,8 @@
 // solo-chat.js — chat panel for push / play pages (same room, mode=solo).
 
-export function wireSoloChat(signaling, getMyUserId) {
+import { showAppAlert } from './ui-alert.js';
+
+export function wireSoloChat(signaling, getMyUserId, { canOpenChat, chatBlockedMessage } = {}) {
   const chatPanel = document.getElementById('chatPanel');
   const chatLog = document.getElementById('chatLog');
   const chatInput = document.getElementById('chatInput');
@@ -48,8 +50,15 @@ export function wireSoloChat(signaling, getMyUserId) {
     if (!isMe && !isChatOpen()) setChatUnread(true);
   });
 
-  chatBtn.addEventListener('click', () => {
+  chatBtn.addEventListener('click', async () => {
     const open = chatPanel.classList.contains('hidden');
+    if (open && typeof canOpenChat === 'function' && !canOpenChat()) {
+      await showAppAlert(
+        chatBlockedMessage || '请先开始推流或拉流后再使用聊天',
+        { title: '无法聊天' },
+      );
+      return;
+    }
     setChatVisible(open);
     chatBtn.classList.toggle('active', open);
   });

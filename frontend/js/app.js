@@ -17,6 +17,7 @@ import {
   replaceVideoTrackInPC,
   swapStreamVideoTrack,
   wireQualityUI,
+  syncQualityButtonLabel,
 } from './quality.js';
 import { showAppAlert } from './ui-alert.js';
 
@@ -47,6 +48,8 @@ const state = {
   // peers keyed by userId. Each: { nickname, cam: {pc}, screen: {pc} }
   peers: new Map(),
 };
+
+syncQualityButtonLabel(() => state.quality);
 
 // Recording preview overlay (shared with push page markup).
 const previewOverlay = document.getElementById('previewOverlay');
@@ -311,6 +314,7 @@ function wireSignalHandlers(sig) {
     }
     if (p.kind === 'cam' && peer) {
       ensurePeerPlaceholderTile(p.userId, peer.nickname);
+      ui.upsertTile(`peer-${p.userId}-cam`, { stream: null });
     } else {
       ui.removeTile(`peer-${p.userId}-${p.kind}`);
     }

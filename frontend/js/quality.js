@@ -43,6 +43,14 @@ export function getQualityLabel(key) {
   return (QUALITIES[key] || QUALITIES[DEFAULT_QUALITY]).label;
 }
 
+/** Sync the toolbar quality button label with the current/stored preset. */
+export function syncQualityButtonLabel(getCurrent = getStoredQuality) {
+  const btn = document.getElementById('btnQuality');
+  if (!btn) return;
+  const labelEl = btn.querySelector('.label');
+  if (labelEl) labelEl.textContent = getQualityLabel(getCurrent());
+}
+
 export function getVideoConstraints(qualityKey) {
   const q = QUALITIES[qualityKey] || QUALITIES[DEFAULT_QUALITY];
   return {
@@ -101,8 +109,7 @@ export function wireQualityUI({ isCamOn, onApply, getCurrent = getStoredQuality 
     for (const opt of dialog.querySelectorAll('.quality-option')) {
       opt.classList.toggle('selected', opt.dataset.quality === current);
     }
-    const labelEl = btn.querySelector('.label');
-    if (labelEl) labelEl.textContent = getQualityLabel(current);
+    syncQualityButtonLabel(getCurrent);
   }
 
   btn.addEventListener('click', () => {
