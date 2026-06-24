@@ -161,12 +161,16 @@
           title.textContent = '加入多人会议';
           roomLabel.textContent = '房间号';
           showFields({ nickname: true, room: true, stream: false, media: true });
+          fields.nickname.querySelector('span').textContent = '昵称';
+          inputs.nickname.placeholder = '比如 Alice';
           inputs.room.placeholder = '比如 1001';
           break;
         case 'call':
           title.textContent = '加入 1v1 通话';
           roomLabel.textContent = '通话编号';
           showFields({ nickname: true, room: true, stream: false, media: true });
+          fields.nickname.querySelector('span').textContent = '昵称';
+          inputs.nickname.placeholder = '比如 Alice';
           inputs.room.placeholder = '比如 alice-bob';
           break;
         case 'push':
@@ -179,8 +183,14 @@
         case 'play':
           title.textContent = '拉流';
           roomLabel.textContent = '房间号';
-          showFields({ nickname: false, room: true, stream: true, media: false });
+          showFields({ nickname: true, room: true, stream: true, media: false });
+          fields.nickname.querySelector('span').textContent = '成员名称';
+          inputs.nickname.placeholder = '比如 观众甲';
           inputs.room.placeholder = '比如 live';
+          break;
+        default:
+          fields.nickname.querySelector('span').textContent = '昵称';
+          inputs.nickname.placeholder = '比如 Alice';
           break;
       }
       syncQualitySelectState();
@@ -206,7 +216,13 @@
 
       if (currentBiz === 'meeting' || currentBiz === 'call') {
         if (!nickname || !room) return;
-      } else if (currentBiz === 'push' || currentBiz === 'play') {
+      } else if (currentBiz === 'play') {
+        if (!nickname || !room) return;
+        if (!isSafeStream(stream)) {
+          await showAppAlert('流名只能包含字母、数字、下划线、连字符或点', { title: '格式错误' });
+          return;
+        }
+      } else if (currentBiz === 'push') {
         if (!room) return;
         if (!isSafeStream(stream)) {
           await showAppAlert('流名只能包含字母、数字、下划线、连字符或点', { title: '格式错误' });
@@ -252,6 +268,9 @@
       } else if (currentBiz === 'push' || currentBiz === 'play') {
         sessionStorage.setItem('zlm.room', room);
         sessionStorage.setItem('zlm.streamId', stream);
+        if (currentBiz === 'play') {
+          sessionStorage.setItem('zlm.nickname', nickname);
+        }
         location.href = currentBiz === 'push' ? 'push.html' : 'play.html';
       }
     });

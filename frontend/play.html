@@ -9,6 +9,7 @@
 <body class="solo-page">
   <header class="topbar">
     <div class="room-label">拉流：<span id="streamLabel">-</span><span class="hint">（房间 / 流名）</span></div>
+    <div class="me-label">成员：<span id="memberName">-</span></div>
     <div class="me-label">状态：<span id="streamState">未开始</span></div>
   </header>
 
@@ -22,12 +23,26 @@
     <section class="solo-info">
       <div><strong>房间：</strong><span id="appName">-</span></div>
       <div><strong>流名：</strong><span id="streamNameInfo">-</span></div>
+      <div><strong>成员：</strong><span id="memberNameInfo">-</span></div>
       <div class="hint">点击「开始拉流」从 ZLM 拉取并播放。请确保对应的流当前正在推送。</div>
     </section>
+
+    <aside id="chatPanel" class="chat-panel hidden">
+      <div class="chat-header">
+        <span>聊天</span>
+        <button id="chatClose" class="icon-btn" title="关闭">×</button>
+      </div>
+      <div id="chatLog" class="chat-log"></div>
+      <form id="chatForm" class="chat-form">
+        <input id="chatInput" type="text" placeholder="说点什么…" maxlength="500" autocomplete="off" />
+        <button type="submit" class="primary">发送</button>
+      </form>
+    </aside>
   </main>
 
   <footer class="toolbar">
     <button id="btnStart" class="toolbar-btn active" title="开始/停止拉流">▶️<span class="label">开始拉流</span></button>
+    <button id="btnChat" class="toolbar-btn" title="聊天">💬<span class="label">聊天</span></button>
     <button id="btnLeave" class="toolbar-btn danger" title="返回首页">⛔<span class="label">退出</span></button>
   </footer>
 

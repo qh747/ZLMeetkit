@@ -3,21 +3,27 @@
 import { Signaling } from './signaling.js';
 import { playStream, closePC } from './webrtc.js';
 import { initSoloLayout } from './solo-layout.js';
+import { wireSoloChat } from './solo-chat.js';
 
 const room = sessionStorage.getItem('zlm.room') || '';
 const streamId = sessionStorage.getItem('zlm.streamId') || '';
-if (!room || !streamId) {
-  location.href = 'index.html';
+const nickname = sessionStorage.getItem('zlm.nickname') || '';
+if (!room || !streamId || !nickname) {
+  location.href = 'index.html?biz=play';
 }
 
 const state = {
   signaling: null,
   pull: null,
   joined: false,
+  myUserId: '',
+  nickname,
 };
 
 document.getElementById('streamLabel').textContent = `${room} / ${streamId}`;
 document.getElementById('streamNameInfo').textContent = streamId;
+document.getElementById('memberName').textContent = nickname;
+document.getElementById('memberNameInfo').textContent = nickname;
 const appNameEl = document.getElementById('appName');
 if (appNameEl) appNameEl.textContent = room;
 
@@ -48,6 +54,7 @@ async function main() {
   state.signaling = new Signaling(`${scheme}//${host}/ws`);
   state.signaling.on('error', (p) => setStatus('服务器：' + p.message, true));
   state.signaling.on('_close', () => setStatus('信令已断开', true, 0));
+  state.signaling.on('joined', (p) => { state.myUserId = p.userId; });
   state.signaling.on('peer-stream-stopped', (p) => {
     if (state.pull && state.pull.streamId === p.streamId) {
       stopPull('推流已停止');
@@ -56,12 +63,13 @@ async function main() {
   // Fallback: publisher left the room without stream-stopped (tab close / crash).
   state.signaling.on('peer-left', () => stopPull('推流方已离开'));
   await state.signaling.connect();
+  wireSoloChat(state.signaling, () => state.myUserId);
 
   // Same room (ZLM app) as the publisher so the back end can locate the
   // stream group; capacity is unlimited in solo mode.
   state.signaling.send('join', {
     room,
-    nickname: 'player',
+    nickname,
     mode: 'solo',
   });
   state.joined = true;

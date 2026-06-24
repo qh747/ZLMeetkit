@@ -83,7 +83,37 @@ func TestCheckEntry_playOK(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := h.CheckEntry("play", "live", "", "demo_001"); err != nil {
+	if err := h.CheckEntry("play", "live", "Bob", "demo_001"); err != nil {
 		t.Fatalf("play should pass: %v", err)
+	}
+}
+
+func TestCheckEntry_playNicknameRequired(t *testing.T) {
+	h := signaling.NewHub(nil)
+	c := signaling.NewTestClient("u1", "publisher", map[string]string{"solo": "demo_001"})
+	if err := h.AddTestClient("live", signaling.RoomModeSolo, c); err != nil {
+		t.Fatal(err)
+	}
+
+	err := h.CheckEntry("play", "live", "", "demo_001")
+	if err == nil || err.Error() != signaling.ErrMemberNameRequired {
+		t.Fatalf("want %q, got %v", signaling.ErrMemberNameRequired, err)
+	}
+}
+
+func TestCheckEntry_playDuplicateMemberName(t *testing.T) {
+	h := signaling.NewHub(nil)
+	pub := signaling.NewTestClient("u1", "publisher", map[string]string{"solo": "demo_001"})
+	if err := h.AddTestClient("live", signaling.RoomModeSolo, pub); err != nil {
+		t.Fatal(err)
+	}
+	player := signaling.NewTestClient("u2", "Bob", nil)
+	if err := h.AddTestClient("live", signaling.RoomModeSolo, player); err != nil {
+		t.Fatal(err)
+	}
+
+	err := h.CheckEntry("play", "live", "Bob", "demo_001")
+	if err == nil || err.Error() != signaling.ErrMemberNameInUse {
+		t.Fatalf("want %q, got %v", signaling.ErrMemberNameInUse, err)
 	}
 }

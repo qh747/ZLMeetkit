@@ -25,6 +25,18 @@
       <div><strong>流名：</strong><span id="streamNameInfo">-</span></div>
       <div class="hint">其他客户端可在「拉流」页面输入同样的房间号和流名进行观看。</div>
     </section>
+
+    <aside id="chatPanel" class="chat-panel hidden">
+      <div class="chat-header">
+        <span>聊天</span>
+        <button id="chatClose" class="icon-btn" title="关闭">×</button>
+      </div>
+      <div id="chatLog" class="chat-log"></div>
+      <form id="chatForm" class="chat-form">
+        <input id="chatInput" type="text" placeholder="说点什么…" maxlength="500" autocomplete="off" />
+        <button type="submit" class="primary">发送</button>
+      </form>
+    </aside>
   </main>
 
   <footer class="toolbar">
@@ -33,6 +45,7 @@
     <button id="btnQuality" class="toolbar-btn" title="画质">🎬<span class="label">标清</span></button>
     <button id="btnStart" class="toolbar-btn active" title="开始/停止推流">▶️<span class="label">开始推流</span></button>
     <button id="btnRecord" class="toolbar-btn" title="录制">⏺️<span class="label">录制</span></button>
+    <button id="btnChat" class="toolbar-btn" title="聊天">💬<span class="label">聊天</span></button>
     <button id="btnLeave" class="toolbar-btn danger" title="返回首页">⛔<span class="label">退出</span></button>
   </footer>
 

@@ -37,8 +37,8 @@ func (r *Room) capacity() int {
 	return 0
 }
 
-// isBroadcast reports whether peer-* / chat events should be relayed within
-// this room. Solo rooms are private contexts and skip all broadcasts.
+// isBroadcast reports whether peer-* events should be relayed within this room.
+// Chat is always broadcast to all room members, including solo (push/play) rooms.
 func (r *Room) isBroadcast() bool {
 	return r.Mode != RoomModeSolo
 }
@@ -116,6 +116,15 @@ func (r *Room) addClient(c *Client, requestedMode string) error {
 	if cap := r.capacity(); cap > 0 && len(r.clients) >= cap {
 		r.mu.Unlock()
 		return errors.New("room is full")
+	}
+	for _, existing := range r.clients {
+		if existing.Nickname == c.Nickname {
+			r.mu.Unlock()
+			if r.Mode == RoomModeSolo {
+				return errors.New(ErrMemberNameInUse)
+			}
+			return errors.New(ErrUserInUse)
+		}
 	}
 	r.clients[c.UserID] = c
 	r.mu.Unlock()
@@ -224,9 +233,6 @@ func (r *Room) broadcastExcept(exceptID, msgType string, payload any) {
 // === Specific broadcasts ======================================================
 
 func (r *Room) broadcastChat(from *Client, text string) {
-	if !r.isBroadcast() {
-		return
-	}
 	payload := ChatPayload{
 		From:     from.UserID,
 		Nickname: from.Nickname,

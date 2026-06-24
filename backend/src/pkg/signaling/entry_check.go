@@ -7,10 +7,12 @@ import (
 
 // Entry check error messages returned to the home page.
 const (
-	ErrRoomInUse      = "房间已经被使用"
-	ErrUserInUse      = "用户已经被使用"
-	ErrStreamIDInUse  = "流id已经被使用"
-	ErrStreamNotFound = "流不存在"
+	ErrRoomInUse         = "房间已经被使用"
+	ErrUserInUse         = "用户已经被使用"
+	ErrMemberNameInUse   = "成员名称已被使用"
+	ErrMemberNameRequired = "成员名称不能为空"
+	ErrStreamIDInUse     = "流id已经被使用"
+	ErrStreamNotFound    = "流不存在"
 )
 
 // bizToMode maps front-end business keys to signaling room modes.
@@ -61,6 +63,12 @@ func (h *Hub) CheckEntry(biz, room, nickname, streamID string) error {
 		}
 		if streamID == "" || !r.hasStreamID(streamID) {
 			return errors.New(ErrStreamNotFound)
+		}
+		if nickname == "" {
+			return errors.New(ErrMemberNameRequired)
+		}
+		if r.hasNickname(nickname) {
+			return errors.New(ErrMemberNameInUse)
 		}
 		return nil
 

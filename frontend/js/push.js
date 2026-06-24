@@ -15,6 +15,7 @@ import {
 import { showAppAlert } from './ui-alert.js';
 
 import { initSoloLayout } from './solo-layout.js';
+import { wireSoloChat } from './solo-chat.js';
 
 const room = sessionStorage.getItem('zlm.room') || '';
 const streamId = sessionStorage.getItem('zlm.streamId') || '';
@@ -31,6 +32,7 @@ const state = {
   quality: getStoredQuality(),
   recording: false,
   joined: false,
+  myUserId: '',
 };
 
 document.getElementById('streamLabel').textContent = `${room} / ${streamId}`;
@@ -158,7 +160,9 @@ async function main() {
   state.signaling.on('record-state', onRecordState);
   state.signaling.on('error', (p) => setStatus('服务器：' + p.message, true));
   state.signaling.on('_close', () => setStatus('信令已断开', true, 0));
+  state.signaling.on('joined', (p) => { state.myUserId = p.userId; });
   await state.signaling.connect();
+  wireSoloChat(state.signaling, () => state.myUserId);
 
   // Solo room: the user-supplied room name doubles as the ZLM app, so
   // publishers and players in the same room share the same stream group.
