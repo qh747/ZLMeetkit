@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# build.sh — 初始化目录结构、编译 zlm_meet，并准备运行时配置。
+# build.sh — 初始化目录结构、编译 ZLMeetServer，并准备运行时配置。
 # 用法：在任意位置执行，脚本自动定位到项目根。
 #   bash backend/scripts/build.sh
 
@@ -12,7 +12,7 @@ SRC_DIR="$BACKEND_DIR/src"
 BIN_DIR="$BACKEND_DIR/bin"
 CONF_DIR="$BIN_DIR/conf"
 CERT_DIR="$BIN_DIR/cert"
-BINARY="$BIN_DIR/zlm_meet"
+BINARY="$BIN_DIR/ZLMeetServer"
 CONFIG_EXAMPLE="$BACKEND_DIR/conf/config-example.yaml"
 CONFIG_DST="$CONF_DIR/config.yaml"
 

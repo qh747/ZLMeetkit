@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# start.sh — 启动 zlm_meet 信令服务。
+# start.sh — 启动 ZLMeetServer 信令服务。
 # 用法：在任意位置执行。
 #   bash backend/scripts/start.sh
 
@@ -9,7 +9,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 BIN_DIR="$BACKEND_DIR/bin"
-BINARY="$BIN_DIR/zlm_meet"
+BINARY="$BIN_DIR/ZLMeetServer"
 CONFIG="$BIN_DIR/conf/config.yaml"
 
 # ── 前置检查 ─────────────────────────────────────────────────────────────────
@@ -26,7 +26,7 @@ if [[ ! -f "$CONFIG" ]]; then
 fi
 
 # ── 启动 ─────────────────────────────────────────────────────────────────────
-echo "==> 启动 zlm_meet"
+echo "==> 启动 ZLMeetServer"
 echo "    二进制: $BINARY"
 echo "    配置:   $CONFIG"
 echo "    工作目录: $BIN_DIR"
@@ -34,4 +34,4 @@ echo ""
 
 # 切换到 bin/ 目录运行，保证 static_dir / cert 等相对路径正确解析
 cd "$BIN_DIR"
-exec ./zlm_meet -config conf/config.yaml
+exec ./ZLMeetServer -config conf/config.yaml

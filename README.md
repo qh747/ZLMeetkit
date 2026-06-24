@@ -1,4 +1,4 @@
-# ZlmMeet
+# ZLMeetkit
 
 [![](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 [![](https://img.shields.io/badge/language-Go-blue.svg)](https://golang.org/)
@@ -6,10 +6,10 @@
 [![](https://img.shields.io/badge/PRs-welcome-yellow.svg)]()
 [![](https://img.shields.io/badge/requires-ZLMediaKit-orange.svg)](https://github.com/ZLMediaKit/ZLMediaKit)
 
-> 一个基于 **ZLMediaKit + Go + WebRTC** 的最小可用多人视频会议示例，内置四种业务入口。
+> 一个基于 **ZLMediaKit + Go + WebRTC** 的多人视频会议。
 
 ```
-浏览器 ──(WebSocket 信令)── Go 后端 ──(HTTP REST)── ZLMediaKit
+浏览器 ──(WebSocket 信令)── ZLMeetkit ──(HTTP REST)── ZLMediaKit
    │                                                  ▲
    └──────────── WebRTC ICE/SRTP（音视频直连）─────────┘
 ```
@@ -63,7 +63,7 @@
 bash backend/scripts/build.sh
 ```
 
-脚本会初始化 `backend/bin/`、复制配置模板、拉取依赖并编译出 `backend/bin/zlm_meet`。
+脚本会初始化 `backend/bin/`、复制配置模板、拉取依赖并编译出 `backend/bin/ZLMeetServer`。
 
 编辑运行时配置：
 
@@ -93,17 +93,6 @@ tls_key:  "cert/key.pem"
 ```
 
 进入证书目录并生成自签证书（将 `192.168.1.100` 改为信令服务器局域网 IP）：
-
-```bash
-cd backend/bin/cert
-
-openssl req -x509 -newkey rsa:2048 \
-  -keyout key.pem -out cert.pem -days 365 -nodes \
-  -subj "/CN=192.168.1.100" \
-  -addext "subjectAltName=IP:192.168.1.100,DNS:localhost"
-```
-
-仅本机调试时，可省略 `-addext`，使用更简短的命令：
 
 ```bash
 cd backend/bin/cert
