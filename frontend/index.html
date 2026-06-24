@@ -3,15 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ZLM 会议 · 业务选择</title>
+  <title>ZLMeet 会议 · 业务选择</title>
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body class="home-page">
   <main class="home-wrap">
     <div class="home-shell">
       <header class="home-header">
-        <p class="home-eyebrow">ZLMediaKit · WebRTC</p>
-        <h1>ZLM 会议</h1>
+        <p class="home-eyebrow">ZLMeetkit · WebRTC</p>
+        <h1>ZLMeet 会议</h1>
         <p class="subtitle">选择业务场景，开始实时音视频</p>
       </header>
 
@@ -58,23 +58,45 @@
     <dialog id="formDialog" class="home-dialog">
       <form id="bizForm" autocomplete="off">
         <h2 id="formTitle">加入</h2>
-        <div class="form-row" data-field="nickname">
+        <div class="form-row form-row-primary" data-field="nickname">
           <label>
             <span>昵称</span>
             <input id="nickname" type="text" maxlength="32" placeholder="比如 Alice" />
           </label>
         </div>
-        <div class="form-row" data-field="room">
+        <div class="form-row form-row-primary" data-field="room">
           <label>
             <span id="roomLabel">房间号</span>
             <input id="room" type="text" maxlength="64" placeholder="比如 1001" />
           </label>
         </div>
-        <div class="form-row" data-field="stream">
+        <div class="form-row form-row-primary" data-field="stream">
           <label>
             <span>流名（仅字母数字、_-.）</span>
             <input id="streamId" type="text" maxlength="128" placeholder="比如 demo_001" />
           </label>
+        </div>
+        <div class="form-row form-row-media" data-field="media">
+          <div class="media-bar">
+            <div class="media-checks">
+              <label class="check-label">
+                <input id="enableMic" type="checkbox" checked />
+                <span>启用麦克风</span>
+              </label>
+              <label class="check-label">
+                <input id="enableCam" type="checkbox" checked />
+                <span>启用摄像头</span>
+              </label>
+            </div>
+            <label class="quality-inline">
+              <span>分辨率：</span>
+              <select id="videoQuality">
+                <option value="smooth">流畅</option>
+                <option value="standard">标清</option>
+                <option value="hd" selected>高清</option>
+              </select>
+            </label>
+          </div>
         </div>
         <div class="form-actions">
           <button type="button" id="formCancel" class="ghost">取消</button>
@@ -86,6 +108,7 @@
 
   <script type="module">
     import { showAppAlert } from './js/ui-alert.js';
+    import { getStoredQuality, setStoredQuality } from './js/quality.js';
 
     const dialog = document.getElementById('formDialog');
     const form = document.getElementById('bizForm');
@@ -95,25 +118,40 @@
       nickname: form.querySelector('[data-field="nickname"]'),
       room: form.querySelector('[data-field="room"]'),
       stream: form.querySelector('[data-field="stream"]'),
+      media: form.querySelector('[data-field="media"]'),
     };
     const inputs = {
       nickname: document.getElementById('nickname'),
       room: document.getElementById('room'),
       stream: document.getElementById('streamId'),
+      mic: document.getElementById('enableMic'),
+      cam: document.getElementById('enableCam'),
+      quality: document.getElementById('videoQuality'),
     };
 
     const SAVED_NAME = sessionStorage.getItem('zlm.nickname') || '';
     if (SAVED_NAME) inputs.nickname.value = SAVED_NAME;
     const SAVED_ROOM = sessionStorage.getItem('zlm.room') || '';
     if (SAVED_ROOM) inputs.room.value = SAVED_ROOM;
+    inputs.mic.checked = sessionStorage.getItem('zlm.micOn') !== 'false';
+    inputs.cam.checked = sessionStorage.getItem('zlm.camOn') !== 'false';
+    inputs.quality.value = getStoredQuality();
+
+    function syncQualitySelectState() {
+      inputs.quality.disabled = !inputs.cam.checked;
+    }
+    inputs.cam.addEventListener('change', syncQualitySelectState);
+    syncQualitySelectState();
 
     let currentBiz = null;
 
     function showFields(map) {
       for (const key of Object.keys(fields)) {
         fields[key].style.display = map[key] ? '' : 'none';
-        inputs[key].required = !!map[key];
       }
+      inputs.nickname.required = !!map.nickname;
+      inputs.room.required = !!map.room;
+      inputs.stream.required = !!map.stream;
     }
 
     function openBiz(biz) {
@@ -122,29 +160,30 @@
         case 'meeting':
           title.textContent = '加入多人会议';
           roomLabel.textContent = '房间号';
-          showFields({ nickname: true, room: true, stream: false });
+          showFields({ nickname: true, room: true, stream: false, media: true });
           inputs.room.placeholder = '比如 1001';
           break;
         case 'call':
           title.textContent = '加入 1v1 通话';
           roomLabel.textContent = '通话编号';
-          showFields({ nickname: true, room: true, stream: false });
+          showFields({ nickname: true, room: true, stream: false, media: true });
           inputs.room.placeholder = '比如 alice-bob';
           break;
         case 'push':
           title.textContent = '推流';
           roomLabel.textContent = '房间号';
-          showFields({ nickname: false, room: true, stream: true });
+          showFields({ nickname: false, room: true, stream: true, media: true });
           inputs.room.placeholder = '比如 live';
           if (!inputs.stream.value) inputs.stream.value = 'pub_' + Date.now();
           break;
         case 'play':
           title.textContent = '拉流';
           roomLabel.textContent = '房间号';
-          showFields({ nickname: false, room: true, stream: true });
+          showFields({ nickname: false, room: true, stream: true, media: false });
           inputs.room.placeholder = '比如 live';
           break;
       }
+      syncQualitySelectState();
       if (typeof dialog.showModal === 'function') {
         dialog.showModal();
       } else {
@@ -198,6 +237,12 @@
         return;
       } finally {
         submitBtn.disabled = false;
+      }
+
+      if (currentBiz === 'meeting' || currentBiz === 'call' || currentBiz === 'push') {
+        sessionStorage.setItem('zlm.micOn', inputs.mic.checked ? 'true' : 'false');
+        sessionStorage.setItem('zlm.camOn', inputs.cam.checked ? 'true' : 'false');
+        setStoredQuality(inputs.quality.value);
       }
 
       if (currentBiz === 'meeting' || currentBiz === 'call') {

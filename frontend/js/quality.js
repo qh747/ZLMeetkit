@@ -28,7 +28,7 @@ export const QUALITIES = {
 };
 
 export const STORAGE_KEY = 'zlm.quality';
-export const DEFAULT_QUALITY = 'standard';
+export const DEFAULT_QUALITY = 'hd';
 
 export function getStoredQuality() {
   const q = sessionStorage.getItem(STORAGE_KEY);

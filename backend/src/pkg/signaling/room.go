@@ -136,10 +136,15 @@ func (r *Room) addClient(c *Client, requestedMode string) error {
 	}
 
 	// Tell others a new peer joined.
-	r.broadcastExcept(c.UserID, TypePeerJoined, PeerJoinedPayload{
+	c.mu.RLock()
+	joinedPayload := PeerJoinedPayload{
 		UserID:   c.UserID,
 		Nickname: c.Nickname,
-	})
+		MicOn:    c.micOn,
+		CamOn:    c.camOn,
+	}
+	c.mu.RUnlock()
+	r.broadcastExcept(c.UserID, TypePeerJoined, joinedPayload)
 	return nil
 }
 

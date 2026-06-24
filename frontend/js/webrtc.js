@@ -32,6 +32,10 @@ const RTC_CONFIG = {
  * @returns {Promise<{pc: RTCPeerConnection, streamId: string}>}
  */
 export async function publishStream({ signaling, stream, kind, streamId, solo, onState }) {
+  if (!stream || stream.getTracks().length === 0) {
+    throw new Error('没有可发布的音视频轨道');
+  }
+
   const pc = new RTCPeerConnection(RTC_CONFIG);
 
   // Add transceivers (send-only) so SDP m-line ordering matches ZLM expectations.
@@ -175,6 +179,46 @@ function waitIceGathering(pc) {
 
     const hardTimer = setTimeout(finish, ICE_GATHER_TIMEOUT_MS);
   });
+}
+
+/** Closes a publish PeerConnection without stopping local capture tracks. */
+export function closePublishPC(pc) {
+  if (!pc) return;
+  try { pc.close(); } catch (_) {}
+}
+
+/**
+ * Publish `stream`, or update an existing publish PC when track set changed.
+ * Republishes (new offer) when audio/video composition changes; otherwise replaceTrack.
+ */
+export async function publishOrUpdateStream({ existingPub, stream, publishOpts }) {
+  if (!stream || stream.getTracks().length === 0) {
+    throw new Error('没有可发布的音视频轨道');
+  }
+  if (!existingPub?.pc) {
+    return publishStream({ ...publishOpts, stream });
+  }
+
+  const pc = existingPub.pc;
+  const senderKinds = new Set(
+    pc.getSenders().filter((s) => s.track).map((s) => s.track.kind),
+  );
+  const streamKinds = new Set(stream.getTracks().map((t) => t.kind));
+  const needsRepublish = [...streamKinds].some((k) => !senderKinds.has(k))
+    || [...senderKinds].some((k) => !streamKinds.has(k));
+
+  if (needsRepublish) {
+    closePublishPC(pc);
+    return publishStream({ ...publishOpts, stream });
+  }
+
+  for (const track of stream.getTracks()) {
+    const sender = pc.getSenders().find((s) => s.track?.kind === track.kind);
+    if (sender && sender.track !== track) {
+      await sender.replaceTrack(track);
+    }
+  }
+  return existingPub;
 }
 
 /** Stops all senders/receivers and closes the PC. */

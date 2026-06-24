@@ -237,6 +237,16 @@ func (c *Client) handleJoin(env *Envelope) error {
 		return fmt.Errorf("invalid mode: %q", mode)
 	}
 	c.Nickname = p.Nickname
+	if p.MicOn != nil {
+		c.mu.Lock()
+		c.micOn = *p.MicOn
+		c.mu.Unlock()
+	}
+	if p.CamOn != nil {
+		c.mu.Lock()
+		c.camOn = *p.CamOn
+		c.mu.Unlock()
+	}
 	room := c.hub.GetOrCreateRoom(p.Room, mode)
 	if err := room.addClient(c, mode); err != nil {
 		// Drop the empty room we may have just created.
@@ -351,12 +361,11 @@ func (c *Client) handleWebRTCOffer(env *Envelope) error {
 	switch p.Mode {
 	case "publish":
 		c.mu.Lock()
-		prev := c.streams[p.Kind]
 		c.streams[p.Kind] = streamID
 		c.mu.Unlock()
-		if prev != streamID {
-			c.room.broadcastStreamStarted(c, p.Kind, streamID)
-		}
+		// Always notify peers so they (re)pull — needed when a joiner publishes
+		// late or republishes after adding tracks.
+		c.room.broadcastStreamStarted(c, p.Kind, streamID)
 	case "publish-solo":
 		c.mu.Lock()
 		c.streams["solo"] = streamID

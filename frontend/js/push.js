@@ -3,7 +3,7 @@
 // point with ZLMediaKit.
 
 import { Signaling } from './signaling.js';
-import { publishStream, closePC } from './webrtc.js';
+import { publishStream, closePublishPC, publishOrUpdateStream } from './webrtc.js';
 import {
   getStoredQuality,
   getVideoConstraints,
@@ -12,6 +12,7 @@ import {
   swapStreamVideoTrack,
   wireQualityUI,
 } from './quality.js';
+import { showAppAlert } from './ui-alert.js';
 
 import { initSoloLayout } from './solo-layout.js';
 
@@ -25,8 +26,8 @@ const state = {
   signaling: null,
   pub: null,            // { pc, streamId }
   localStream: null,
-  micOn: true,
-  camOn: true,
+  micOn: sessionStorage.getItem('zlm.micOn') !== 'false',
+  camOn: sessionStorage.getItem('zlm.camOn') !== 'false',
   quality: getStoredQuality(),
   recording: false,
   joined: false,
@@ -49,6 +50,63 @@ const previewCloseBtn = document.getElementById('previewCloseBtn');
 const previewDownload = document.getElementById('previewDownload');
 
 let pendingRecordFileUrl = null; // set when record-stop ack arrives
+let mediaToggleBusy = false;
+
+function soloPublishOpts() {
+  return {
+    signaling: state.signaling,
+    streamId,
+    solo: true,
+    onState: (s) => {
+      statusEl.textContent = '推流状态：' + s;
+      if (s === 'failed') setStatus('推流连接失败，请检查 ZLM 配置', true, 0);
+    },
+  };
+}
+
+function ensureLocalStream() {
+  if (!state.localStream) state.localStream = new MediaStream();
+  return state.localStream;
+}
+
+async function acquireLocalTrack(kind) {
+  const stream = ensureLocalStream();
+  const constraints = kind === 'audio'
+    ? { audio: true, video: false }
+    : { audio: false, video: getVideoConstraints(state.quality) };
+  let fresh;
+  try {
+    fresh = await navigator.mediaDevices.getUserMedia(constraints);
+  } catch (err) {
+    const label = kind === 'audio' ? '麦克风' : '摄像头';
+    throw new Error(`无法访问${label}：${err.message}`);
+  }
+  const track = fresh.getTracks()[0];
+  if (!track) {
+    fresh.getTracks().forEach((t) => t.stop());
+    throw new Error(kind === 'audio' ? '无法获取麦克风' : '无法获取摄像头');
+  }
+  for (const old of (kind === 'audio' ? stream.getAudioTracks() : stream.getVideoTracks())) {
+    stream.removeTrack(old);
+    old.stop();
+  }
+  stream.addTrack(track);
+  track.enabled = kind === 'audio' ? state.micOn : state.camOn;
+  return track;
+}
+
+async function refreshSoloPublish() {
+  if (!state.pub?.pc) return;
+  state.pub = await publishOrUpdateStream({
+    existingPub: state.pub,
+    stream: state.localStream,
+    publishOpts: soloPublishOpts(),
+  });
+}
+
+function updateLocalPreview() {
+  document.getElementById('localVideo').srcObject = state.localStream;
+}
 
 function setStatus(text, error = false, durationMs = 2500) {
   statusBar.textContent = text;
@@ -77,10 +135,16 @@ main().catch((err) => {
 async function main() {
   // Preview the camera ASAP.
   try {
-    state.localStream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
-      video: getVideoConstraints(state.quality),
-    });
+    if (state.micOn || state.camOn) {
+      state.localStream = await navigator.mediaDevices.getUserMedia({
+        audio: state.micOn,
+        video: state.camOn ? getVideoConstraints(state.quality) : false,
+      });
+      for (const t of state.localStream.getAudioTracks()) t.enabled = state.micOn;
+      for (const t of state.localStream.getVideoTracks()) t.enabled = state.camOn;
+    } else {
+      state.localStream = new MediaStream();
+    }
   } catch (err) {
     setStatus('无法访问摄像头/麦克风：' + err.message, true, 0);
     throw err;
@@ -106,6 +170,8 @@ async function main() {
   state.joined = true;
 
   wireToolbar();
+  setBtn('btnMic', state.micOn ? '' : 'off');
+  setBtn('btnCam', state.camOn ? '' : 'off');
   statusEl.textContent = '已就绪，点击「开始推流」';
 }
 
@@ -149,16 +215,8 @@ function downloadPreview() {
 }
 
 function wireToolbar() {
-  document.getElementById('btnMic').addEventListener('click', () => {
-    state.micOn = !state.micOn;
-    for (const t of state.localStream.getAudioTracks()) t.enabled = state.micOn;
-    setBtn('btnMic', state.micOn ? '' : 'off');
-  });
-  document.getElementById('btnCam').addEventListener('click', () => {
-    state.camOn = !state.camOn;
-    for (const t of state.localStream.getVideoTracks()) t.enabled = state.camOn;
-    setBtn('btnCam', state.camOn ? '' : 'off');
-  });
+  document.getElementById('btnMic').addEventListener('click', toggleMic);
+  document.getElementById('btnCam').addEventListener('click', toggleCam);
   document.getElementById('btnStart').addEventListener('click', toggleStream);
   document.getElementById('btnRecord').addEventListener('click', toggleRecord);
   document.getElementById('btnLeave').addEventListener('click', () => leave({ navigate: true }));
@@ -172,6 +230,50 @@ function wireToolbar() {
     getCurrent: () => state.quality,
     onApply: applyQuality,
   });
+}
+
+async function toggleMic() {
+  if (mediaToggleBusy) return;
+  mediaToggleBusy = true;
+  const targetOn = !state.micOn;
+  try {
+    if (targetOn && ensureLocalStream().getAudioTracks().length === 0) {
+      state.micOn = true;
+      await acquireLocalTrack('audio');
+    } else {
+      state.micOn = targetOn;
+      for (const t of state.localStream.getAudioTracks()) t.enabled = state.micOn;
+    }
+    setBtn('btnMic', state.micOn ? '' : 'off');
+    updateLocalPreview();
+    if (state.pub) await refreshSoloPublish();
+  } catch (err) {
+    setStatus(err.message, true);
+  } finally {
+    mediaToggleBusy = false;
+  }
+}
+
+async function toggleCam() {
+  if (mediaToggleBusy) return;
+  mediaToggleBusy = true;
+  const targetOn = !state.camOn;
+  try {
+    if (targetOn && ensureLocalStream().getVideoTracks().length === 0) {
+      state.camOn = true;
+      await acquireLocalTrack('video');
+    } else {
+      state.camOn = targetOn;
+      for (const t of state.localStream.getVideoTracks()) t.enabled = state.camOn;
+    }
+    setBtn('btnCam', state.camOn ? '' : 'off');
+    updateLocalPreview();
+    if (state.pub) await refreshSoloPublish();
+  } catch (err) {
+    setStatus(err.message, true);
+  } finally {
+    mediaToggleBusy = false;
+  }
 }
 
 async function applyQuality(qualityKey) {
@@ -222,7 +324,7 @@ async function toggleStream() {
       try { await state.signaling.request('record-stop', { streamId }); } catch (_) {}
     }
     try { state.signaling.send('stream-stopped', { kind: 'solo', streamId }); } catch (_) {}
-    try { closePC(state.pub.pc); } catch (_) {}
+    try { closePublishPC(state.pub.pc); } catch (_) {}
     state.pub = null;
     statusEl.textContent = '已停止';
     setBtn('btnStart', 'active');
@@ -230,16 +332,15 @@ async function toggleStream() {
     return;
   }
   statusEl.textContent = '推流中…';
+  if (!state.localStream || state.localStream.getTracks().length === 0) {
+    setStatus('请至少启用麦克风或摄像头后再推流', false);
+    statusEl.textContent = '已就绪，点击「开始推流」';
+    return;
+  }
   try {
     state.pub = await publishStream({
-      signaling: state.signaling,
+      ...soloPublishOpts(),
       stream: state.localStream,
-      streamId,
-      solo: true,
-      onState: (s) => {
-        statusEl.textContent = '推流状态：' + s;
-        if (s === 'failed') setStatus('推流连接失败，请检查 ZLM 配置', true, 0);
-      },
     });
     statusEl.textContent = '推流已建立';
     setBtn('btnStart', '');
@@ -265,15 +366,19 @@ async function toggleRecord() {
   }
 }
 
-function leave({ navigate = false } = {}) {
+async function leave({ navigate = false } = {}) {
+  if (navigate && state.recording) {
+    await showAppAlert('请先关闭录制再退出', { title: '无法退出' });
+    return;
+  }
   try {
-    if (state.pub && state.recording) {
+    if (state.pub && state.recording && !navigate) {
       state.signaling.request('record-stop', { streamId }).catch(() => {});
     }
     if (state.pub) state.signaling.send('stream-stopped', { kind: 'solo', streamId });
     if (state.signaling && state.joined) state.signaling.send('leave', {});
   } catch (_) {}
-  if (state.pub) closePC(state.pub.pc);
+  if (state.pub) closePublishPC(state.pub.pc);
   if (state.localStream) state.localStream.getTracks().forEach((t) => t.stop());
   try { state.signaling && state.signaling.close(); } catch (_) {}
   if (navigate) location.href = 'index.html';

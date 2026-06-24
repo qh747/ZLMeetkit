@@ -26,6 +26,8 @@ type JoinPayload struct {
 	Room     string `json:"room"`
 	Nickname string `json:"nickname"`
 	Mode     string `json:"mode,omitempty"` // meeting | call | solo (default meeting)
+	MicOn    *bool  `json:"micOn,omitempty"`
+	CamOn    *bool  `json:"camOn,omitempty"`
 }
 
 // s2c joined: confirms join + lists existing peers (and their published streams).
@@ -53,6 +55,8 @@ type JoinedPayload struct {
 type PeerJoinedPayload struct {
 	UserID   string `json:"userId"`
 	Nickname string `json:"nickname"`
+	MicOn    bool   `json:"micOn"`
+	CamOn    bool   `json:"camOn"`
 }
 
 // s2c peer-left

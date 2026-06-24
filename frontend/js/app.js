@@ -8,7 +8,7 @@
 //   - Render UI updates via MeetingUI.
 
 import { Signaling } from './signaling.js';
-import { publishStream, playStream, closePC } from './webrtc.js';
+import { publishStream, playStream, closePC, closePublishPC, publishOrUpdateStream } from './webrtc.js';
 import { MeetingUI } from './ui.js';
 import {
   getStoredQuality,
@@ -18,6 +18,7 @@ import {
   swapStreamVideoTrack,
   wireQualityUI,
 } from './quality.js';
+import { showAppAlert } from './ui-alert.js';
 
 // Resolve mode: meeting.html uses 'meeting'; call.html uses 'call'.
 const urlParams = new URLSearchParams(location.search);
@@ -31,8 +32,8 @@ const state = {
   myUserId: null,
   myNickname: sessionStorage.getItem('zlm.nickname') || '',
   room: sessionStorage.getItem('zlm.room') || '',
-  micOn: true,
-  camOn: true,
+  micOn: sessionStorage.getItem('zlm.micOn') !== 'false',
+  camOn: sessionStorage.getItem('zlm.camOn') !== 'false',
   quality: getStoredQuality(),
 
   localCamStream: null,     // MediaStream from getUserMedia
@@ -56,6 +57,84 @@ const previewCloseBtn = document.getElementById('previewCloseBtn');
 const previewDownload = document.getElementById('previewDownload');
 let pendingRecordFileUrl = null;
 let pendingRecordKind = 'cam';
+let mediaToggleBusy = false;
+
+function camPublishOpts() {
+  return {
+    signaling: state.signaling,
+    kind: 'cam',
+    onState: (s) => {
+      if (s === 'failed' || s === 'disconnected') {
+        ui.showStatus('上行连接异常，请检查 ZLM WebRTC 配置', { error: true, durationMs: 0 });
+      }
+    },
+  };
+}
+
+function ensureLocalCamStream() {
+  if (!state.localCamStream) state.localCamStream = new MediaStream();
+  return state.localCamStream;
+}
+
+async function ensureCamPublish() {
+  const stream = state.localCamStream;
+  if (!stream || stream.getTracks().length === 0) return;
+
+  const prevPub = state.camPub;
+  if (prevPub?.pc) {
+    const prevKinds = new Set(
+      prevPub.pc.getSenders().filter((s) => s.track).map((s) => s.track.kind),
+    );
+    const newKinds = new Set(stream.getTracks().map((t) => t.kind));
+    const needsRepublish = [...newKinds].some((k) => !prevKinds.has(k))
+      || [...prevKinds].some((k) => !newKinds.has(k));
+    if (needsRepublish && prevPub.streamId) {
+      try {
+        state.signaling.send('stream-stopped', { kind: 'cam', streamId: prevPub.streamId });
+      } catch (_) {}
+    }
+  }
+
+  state.camPub = await publishOrUpdateStream({
+    existingPub: state.camPub,
+    stream,
+    publishOpts: camPublishOpts(),
+  });
+  notifyCamStreamStarted();
+}
+
+function notifyCamStreamStarted() {
+  if (!state.camPub?.streamId || !state.signaling) return;
+  try {
+    state.signaling.send('stream-started', { kind: 'cam', streamId: state.camPub.streamId });
+  } catch (_) {}
+}
+
+async function acquireLocalTrack(kind) {
+  const stream = ensureLocalCamStream();
+  const constraints = kind === 'audio'
+    ? { audio: true, video: false }
+    : { audio: false, video: getVideoConstraints(state.quality) };
+  let fresh;
+  try {
+    fresh = await navigator.mediaDevices.getUserMedia(constraints);
+  } catch (err) {
+    const label = kind === 'audio' ? '麦克风' : '摄像头';
+    throw new Error(`无法访问${label}：${err.message}`);
+  }
+  const track = fresh.getTracks()[0];
+  if (!track) {
+    fresh.getTracks().forEach((t) => t.stop());
+    throw new Error(kind === 'audio' ? '无法获取麦克风' : '无法获取摄像头');
+  }
+  for (const old of (kind === 'audio' ? stream.getAudioTracks() : stream.getVideoTracks())) {
+    stream.removeTrack(old);
+    old.stop();
+  }
+  stream.addTrack(track);
+  track.enabled = kind === 'audio' ? state.micOn : state.camOn;
+  return track;
+}
 
 if (!state.room || !state.myNickname) {
   location.href = 'index.html';
@@ -94,15 +173,17 @@ async function main() {
   wireSignalHandlers(state.signaling); // listeners must be registered before connect() resolves
 
   // Capture promise — no await yet, so connect() can race with it.
-  const mediaPromise = navigator.mediaDevices
-    .getUserMedia({
-      audio: true,
-      video: getVideoConstraints(state.quality),
-    })
-    .catch((err) => {
-      ui.showStatus('无法访问摄像头/麦克风：' + err.message, { error: true, durationMs: 0 });
-      throw err;
-    });
+  const mediaPromise = (state.micOn || state.camOn)
+    ? navigator.mediaDevices
+      .getUserMedia({
+        audio: state.micOn,
+        video: state.camOn ? getVideoConstraints(state.quality) : false,
+      })
+      .catch((err) => {
+        ui.showStatus('无法访问摄像头/麦克风：' + err.message, { error: true, durationMs: 0 });
+        throw err;
+      })
+    : Promise.resolve(new MediaStream());
 
   // (2) Connect WS, then send `join`. The server immediately replies with
   //     `joined` (handled by wireSignalHandlers), which kicks off pulling
@@ -118,31 +199,40 @@ async function main() {
     room: state.room,
     nickname: state.myNickname,
     mode: state.mode,
+    micOn: state.micOn,
+    camOn: state.camOn,
   });
 
   // (3) Local media ready → publish first so existing peers can pull ASAP,
   //     then render self tile and wire toolbar.
   const localStream = await mediaPromise;
   state.localCamStream = localStream;
+  for (const t of localStream.getAudioTracks()) t.enabled = state.micOn;
+  for (const t of localStream.getVideoTracks()) t.enabled = state.camOn;
 
-  const publishPromise = publishStream({
-    signaling: state.signaling,
-    stream: localStream,
-    kind: 'cam',
-    onState: (s) => {
-      if (s === 'failed' || s === 'disconnected') {
-        ui.showStatus('上行连接异常，请检查 ZLM WebRTC 配置', { error: true, durationMs: 0 });
-      }
-    },
-  }).then((result) => {
-    state.camPub = result;
-  }).catch((err) => {
-    ui.showStatus('推流失败：' + err.message, { error: true, durationMs: 0 });
-    throw err;
+  const hasLocalTracks = localStream.getTracks().length > 0;
+  const publishPromise = hasLocalTracks
+    ? publishStream({
+      ...camPublishOpts(),
+      stream: localStream,
+    }).then((result) => {
+      state.camPub = result;
+    }).catch((err) => {
+      ui.showStatus('推流失败：' + err.message, { error: true, durationMs: 0 });
+      throw err;
+    })
+    : Promise.resolve();
+
+  ui.upsertTile('self', {
+    nickname: state.myNickname + '（我）',
+    isSelf: true,
+    stream: hasLocalTracks ? localStream : null,
   });
-
-  ui.upsertTile('self', { nickname: state.myNickname + '（我）', isSelf: true, stream: localStream });
   wireToolbar();
+  state.signaling.send('media-state', { micOn: state.micOn, camOn: state.camOn });
+  if (!hasLocalTracks) {
+    ui.showStatus('已加入，当前未开启麦克风或摄像头');
+  }
 
   await publishPromise;
 }
@@ -156,14 +246,28 @@ function buildWsURL() {
 
 // === Signaling event handlers ================================================
 
+function ensurePeerPlaceholderTile(userId, nickname, { micOn, camOn } = {}) {
+  const peer = ensurePeer(userId, nickname);
+  const tileKey = `peer-${userId}-cam`;
+  ui.upsertTile(tileKey, { nickname: peer.nickname });
+  if (micOn !== undefined || camOn !== undefined) {
+    ui.updateBadges(tileKey, {
+      micOn: micOn !== undefined ? micOn : true,
+      camOn: camOn !== undefined ? camOn : true,
+    });
+  }
+  return peer;
+}
+
 function wireSignalHandlers(sig) {
   sig.on('joined', (p) => {
     state.myUserId = p.userId;
     ui.appendSystem(`已加入房间 ${p.room}`);
-    // For each existing peer, register them and start pulling each of their streams.
     for (const peer of p.peers || []) {
-      ensurePeer(peer.userId, peer.nickname);
-      ui.updateBadges(`peer-${peer.userId}-cam`, { micOn: peer.micOn, camOn: peer.camOn });
+      ensurePeerPlaceholderTile(peer.userId, peer.nickname, {
+        micOn: peer.micOn,
+        camOn: peer.camOn,
+      });
       for (const s of peer.streams || []) {
         startPullingPeerStream(peer.userId, peer.nickname, s.kind);
       }
@@ -171,10 +275,11 @@ function wireSignalHandlers(sig) {
   });
 
   sig.on('peer-joined', (p) => {
-    ensurePeer(p.userId, p.nickname);
+    ensurePeerPlaceholderTile(p.userId, p.nickname, {
+      micOn: p.micOn,
+      camOn: p.camOn,
+    });
     ui.appendSystem(`${p.nickname} 加入了`);
-    // Preemptively pull cam while the joiner is still opening camera/publish.
-    startPullingPeerStream(p.userId, p.nickname, 'cam', { preemptive: true });
   });
 
   sig.on('peer-left', (p) => {
@@ -190,12 +295,12 @@ function wireSignalHandlers(sig) {
   });
 
   sig.on('peer-state', (p) => {
-    ui.updateBadges(`peer-${p.userId}-cam`, { micOn: p.micOn, camOn: p.camOn });
+    ensurePeerPlaceholderTile(p.userId, null, { micOn: p.micOn, camOn: p.camOn });
   });
 
   sig.on('peer-stream-started', (p) => {
     const peer = ensurePeer(p.userId);
-    startPullingPeerStream(p.userId, peer.nickname, p.kind);
+    startPullingPeerStream(p.userId, peer.nickname, p.kind, { preemptive: true, force: true });
   });
 
   sig.on('peer-stream-stopped', (p) => {
@@ -204,7 +309,11 @@ function wireSignalHandlers(sig) {
       closePC(peer[p.kind].pc);
       delete peer[p.kind];
     }
-    ui.removeTile(`peer-${p.userId}-${p.kind}`);
+    if (p.kind === 'cam' && peer) {
+      ensurePeerPlaceholderTile(p.userId, peer.nickname);
+    } else {
+      ui.removeTile(`peer-${p.userId}-${p.kind}`);
+    }
   });
 
   sig.on('chat', (p) => {
@@ -247,11 +356,23 @@ function ensurePeer(userId, nickname) {
   return peer;
 }
 
-async function startPullingPeerStream(userId, nickname, kind, { preemptive = false } = {}) {
+function stopPeerPull(peer, kind) {
+  if (!peer || !peer[kind]) return;
+  closePC(peer[kind].pc);
+  delete peer[kind];
+}
+
+async function startPullingPeerStream(userId, nickname, kind, { preemptive = false, force = false } = {}) {
   const peer = ensurePeer(userId, nickname);
-  if (peer[kind]) return;
   const inflightKey = `${kind}Pulling`;
-  if (peer[inflightKey]) return peer[inflightKey];
+
+  if (force) {
+    stopPeerPull(peer, kind);
+    delete peer[inflightKey];
+  }
+
+  if (peer[kind] && !force) return;
+  if (peer[inflightKey] && !force) return peer[inflightKey];
 
   const tileKey = `peer-${userId}-${kind}`;
   ui.upsertTile(tileKey, {
@@ -259,34 +380,54 @@ async function startPullingPeerStream(userId, nickname, kind, { preemptive = fal
     isScreen: kind === 'screen',
   });
 
-  peer[inflightKey] = pullPeerStreamWithRetry(userId, nickname, kind, tileKey, preemptive)
+  const pullGen = (peer[`${kind}PullGen`] || 0) + 1;
+  peer[`${kind}PullGen`] = pullGen;
+
+  peer[inflightKey] = pullPeerStreamWithRetry(userId, nickname, kind, tileKey, preemptive, pullGen)
     .finally(() => { delete peer[inflightKey]; });
   return peer[inflightKey];
 }
 
-async function pullPeerStreamWithRetry(userId, nickname, kind, tileKey, preemptive) {
+async function pullPeerStreamWithRetry(userId, nickname, kind, tileKey, preemptive, pullGen) {
   const peer = ensurePeer(userId, nickname);
-  const maxAttempts = preemptive ? 25 : 1;
-  const retryDelayMs = 180;
+  const maxAttempts = preemptive ? 30 : 3;
+  const retryDelayMs = 200;
   let lastErr;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (peer[`${kind}PullGen`] !== pullGen) return;
     if (peer[kind]) return;
     try {
-      const result = await playStream({
+      let pullResult = null;
+      pullResult = await playStream({
         signaling: state.signaling,
         targetUserId: userId,
         kind,
         onTrack: (stream) => {
+          if (peer[`${kind}PullGen`] !== pullGen) return;
           ui.upsertTile(tileKey, { stream });
         },
         onState: (s) => {
-          if (s === 'failed') {
+          if (s !== 'failed' && s !== 'disconnected') return;
+          if (peer[`${kind}PullGen`] !== pullGen) return;
+          if (peer[kind]?.pc !== pullResult?.pc) return;
+          const retries = (peer[`${kind}FailRetries`] || 0) + 1;
+          peer[`${kind}FailRetries`] = retries;
+          stopPeerPull(peer, kind);
+          if (retries >= 4) {
             ui.showStatus(`拉取 ${peer.nickname}/${kind} 失败`, { error: true });
+            return;
           }
+          ui.showStatus(`拉取 ${peer.nickname}/${kind} 失败，正在重试…`, { error: false });
+          startPullingPeerStream(userId, nickname, kind, { preemptive: true, force: true });
         },
       });
-      peer[kind] = result;
+      if (peer[`${kind}PullGen`] !== pullGen) {
+        closePC(pullResult.pc);
+        return;
+      }
+      peer[`${kind}FailRetries`] = 0;
+      peer[kind] = pullResult;
       return;
     } catch (err) {
       lastErr = err;
@@ -299,9 +440,7 @@ async function pullPeerStreamWithRetry(userId, nickname, kind, tileKey, preempti
   if (!preemptive) {
     ui.showStatus(`拉流失败：${lastErr.message}`, { error: true });
   }
-  if (!peer[kind]) {
-    ui.removeTile(tileKey);
-  }
+  // Keep the placeholder tile when the peer has not published yet.
 }
 
 function sleep(ms) {
@@ -406,7 +545,7 @@ async function toggleRecord(kind) {
   const isOn = state[inFlightFlag];
   const type = isOn ? 'record-stop' : 'record-start';
   if (kind === 'screen' && !state.screenPub) {
-    ui.showStatus('请先开启屏幕共享', { error: false });
+    await showAppAlert('请先开启屏幕共享后再录屏', { title: '无法录屏' });
     return;
   }
   try {
@@ -417,22 +556,62 @@ async function toggleRecord(kind) {
   }
 }
 
-function toggleMic() {
-  state.micOn = !state.micOn;
-  if (state.localCamStream) {
-    for (const t of state.localCamStream.getAudioTracks()) t.enabled = state.micOn;
+async function toggleMic() {
+  if (mediaToggleBusy) return;
+  mediaToggleBusy = true;
+  const targetOn = !state.micOn;
+  try {
+    if (targetOn && ensureLocalCamStream().getAudioTracks().length === 0) {
+      state.micOn = true;
+      await acquireLocalTrack('audio');
+      await ensureCamPublish();
+      ui.upsertTile('self', { stream: state.localCamStream });
+    } else {
+      state.micOn = targetOn;
+      if (state.localCamStream) {
+        for (const t of state.localCamStream.getAudioTracks()) t.enabled = state.micOn;
+      }
+      if (state.micOn && state.localCamStream?.getAudioTracks().length > 0 && !state.camPub) {
+        await ensureCamPublish();
+        ui.upsertTile('self', { stream: state.localCamStream });
+      }
+    }
+    ui.setButtonState('btnMic', state.micOn ? '' : 'off');
+    state.signaling.send('media-state', { micOn: state.micOn, camOn: state.camOn });
+  } catch (err) {
+    ui.showStatus(err.message, { error: true });
+  } finally {
+    mediaToggleBusy = false;
   }
-  ui.setButtonState('btnMic', state.micOn ? '' : 'off');
-  state.signaling.send('media-state', { micOn: state.micOn, camOn: state.camOn });
 }
 
-function toggleCam() {
-  state.camOn = !state.camOn;
-  if (state.localCamStream) {
-    for (const t of state.localCamStream.getVideoTracks()) t.enabled = state.camOn;
+async function toggleCam() {
+  if (mediaToggleBusy) return;
+  mediaToggleBusy = true;
+  const targetOn = !state.camOn;
+  try {
+    if (targetOn && ensureLocalCamStream().getVideoTracks().length === 0) {
+      state.camOn = true;
+      await acquireLocalTrack('video');
+      await ensureCamPublish();
+      ui.upsertTile('self', { stream: state.localCamStream });
+    } else {
+      state.camOn = targetOn;
+      if (state.localCamStream) {
+        for (const t of state.localCamStream.getVideoTracks()) t.enabled = state.camOn;
+      }
+      if (state.camOn && state.localCamStream?.getVideoTracks().length > 0 && !state.camPub) {
+        await ensureCamPublish();
+        ui.upsertTile('self', { stream: state.localCamStream });
+      }
+    }
+    ui.setButtonState('btnCam', state.camOn ? '' : 'off');
+    state.signaling.send('media-state', { micOn: state.micOn, camOn: state.camOn });
+  } catch (err) {
+    ui.showStatus(err.message, { error: true });
+  } finally {
+    mediaToggleBusy = false;
   }
-  ui.setButtonState('btnCam', state.camOn ? '' : 'off');
-  state.signaling.send('media-state', { micOn: state.micOn, camOn: state.camOn });
 }
 
 async function applyQuality(qualityKey) {
@@ -536,11 +715,15 @@ async function toggleScreen() {
   }
 }
 
-function leave({ navigate }) {
+async function leave({ navigate }) {
+  if (navigate && (state.camRecording || state.screenRecording)) {
+    await showAppAlert('请先关闭录制再退出', { title: '无法退出' });
+    return;
+  }
   try {
     if (state.signaling) state.signaling.send('leave', {});
   } catch (_) {}
-  if (state.camPub) closePC(state.camPub.pc);
+  if (state.camPub) closePublishPC(state.camPub.pc);
   if (state.screenPub) closePC(state.screenPub.pc);
   for (const peer of state.peers.values()) {
     if (peer.cam) closePC(peer.cam.pc);
