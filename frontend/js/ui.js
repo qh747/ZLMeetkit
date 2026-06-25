@@ -94,19 +94,24 @@ export class MeetingUI {
 
       if (this.isMeetingLayout) {
         tile.addEventListener('dblclick', (e) => {
+          // touchend 双击已处理时屏蔽 iOS 额外合成的 dblclick，防止二次触发
+          if (Date.now() < (this._suppressFocusClickUntil || 0)) { e.preventDefault(); return; }
           e.preventDefault();
           this.toggleTileFocus(key);
         });
         // iPad / iOS：dblclick 由触摸合成时不可靠，补充 touchend 双击检测
         tile.addEventListener('touchend', (e) => {
           const touch = e.changedTouches[0];
-          const now   = Date.now();
-          const last  = tile._lastTap;
-          if (last && now - last.time < 300 &&
-              Math.abs(touch.clientX - last.x) < 30 &&
-              Math.abs(touch.clientY - last.y) < 30) {
+          if (!touch) return;
+          const now  = Date.now();
+          const last = tile._lastTap;
+          if (last && now - last.time < 350 &&
+              Math.abs(touch.clientX - last.x) < 40 &&
+              Math.abs(touch.clientY - last.y) < 40) {
             e.preventDefault();
             tile._lastTap = null;
+            // 屏蔽随后可能由浏览器合成的 dblclick，避免 toggleTileFocus 被调用两次
+            this._suppressFocusClickUntil = Date.now() + 500;
             this.toggleTileFocus(key);
           } else {
             tile._lastTap = { time: now, x: touch.clientX, y: touch.clientY };

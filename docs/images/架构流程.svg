@@ -84,10 +84,19 @@
     <path d="M0 20 Q0 0 20 0 L70 0 L0 70 Z" fill="#2ec4b6" fill-opacity="0.1"/>
     <g transform="translate(20 24)">
       <rect width="60" height="44" rx="10" fill="#0a0c0f" stroke="#2ec4b6" stroke-opacity="0.65"/>
-      <text x="30" y="29" text-anchor="middle" font-family="Inter, sans-serif" font-size="20" font-weight="800" fill="#2ec4b6">ZL</text>
+      <!-- 信令交换图标：两个对向箭头代表 WebSocket 双向信令 -->
+      <!-- 右向箭头（上行） -->
+      <line x1="10" y1="15" x2="42" y2="15" stroke="#2ec4b6" stroke-width="2" stroke-linecap="round" stroke-opacity="0.9"/>
+      <path d="M36 10 L43 15 L36 20" fill="none" stroke="#2ec4b6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <!-- 左向箭头（下行） -->
+      <line x1="50" y1="29" x2="18" y2="29" stroke="#2ec4b6" stroke-width="2" stroke-linecap="round" stroke-opacity="0.9"/>
+      <path d="M24 24 L17 29 L24 34" fill="none" stroke="#2ec4b6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <!-- 端点圆点 -->
+      <circle cx="10" cy="15" r="2.5" fill="#2ec4b6"/>
+      <circle cx="50" cy="29" r="2.5" fill="#2ec4b6"/>
     </g>
     <text x="96" y="40" font-family="Inter, sans-serif" font-size="20" font-weight="700" fill="#f4f4f5">ZLMeetkit</text>
-    <text x="96" y="60" font-family="Inter, sans-serif" font-size="12" fill="#8b919a" letter-spacing="1">GO · SIGNALING SERVER</text>
+    <text x="96" y="60" font-family="Inter, sans-serif" font-size="12" fill="#8b919a" letter-spacing="1">SIGNALING SERVER</text>
     <line x1="20" y1="84" x2="240" y2="84" stroke="#ffffff" stroke-opacity="0.06"/>
     <text x="20" y="106" font-family="Inter, sans-serif" font-size="12" fill="#d4d4d8">• WebSocket 信令网关</text>
     <text x="20" y="124" font-family="Inter, sans-serif" font-size="12" fill="#d4d4d8">• 房间 / 成员 / 流编排</text>
@@ -100,13 +109,27 @@
     <rect width="260" height="160" rx="20" fill="none" stroke="#ffffff" stroke-opacity="0.05"/>
     <g transform="translate(20 24)">
       <rect width="60" height="44" rx="10" fill="#0a0c0f" stroke="#c4a574" stroke-opacity="0.55"/>
-      <text x="30" y="29" text-anchor="middle" font-family="Inter, sans-serif" font-size="20" font-weight="800" fill="#c4a574">M</text>
+      <!-- 媒体服务 / SFU 图标：一路输入，三路扇出（选择性转发） -->
+      <!-- 输入流 -->
+      <line x1="6" y1="22" x2="21" y2="22" stroke="#c4a574" stroke-width="1.8" stroke-linecap="round"/>
+      <path d="M16 17 L22 22 L16 27" fill="none" stroke="#c4a574" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      <!-- 中心节点 -->
+      <circle cx="30" cy="22" r="5" fill="#c4a574" fill-opacity="0.18" stroke="#c4a574" stroke-width="1.6"/>
+      <!-- 输出：右上 -->
+      <line x1="34" y1="18" x2="48" y2="11" stroke="#c4a574" stroke-width="1.5" stroke-linecap="round"/>
+      <circle cx="50" cy="10" r="2.5" fill="#c4a574" fill-opacity="0.85"/>
+      <!-- 输出：右平 -->
+      <line x1="35" y1="22" x2="50" y2="22" stroke="#c4a574" stroke-width="1.5" stroke-linecap="round"/>
+      <circle cx="52" cy="22" r="2.5" fill="#c4a574" fill-opacity="0.85"/>
+      <!-- 输出：右下 -->
+      <line x1="34" y1="26" x2="48" y2="33" stroke="#c4a574" stroke-width="1.5" stroke-linecap="round"/>
+      <circle cx="50" cy="34" r="2.5" fill="#c4a574" fill-opacity="0.85"/>
     </g>
     <text x="96" y="40" font-family="Inter, sans-serif" font-size="20" font-weight="700" fill="#f4f4f5">ZLMediaKit</text>
     <text x="96" y="60" font-family="Inter, sans-serif" font-size="12" fill="#8b919a" letter-spacing="1">MEDIA SERVER (SFU)</text>
     <line x1="20" y1="84" x2="240" y2="84" stroke="#ffffff" stroke-opacity="0.06"/>
     <text x="20" y="106" font-family="Inter, sans-serif" font-size="12" fill="#d4d4d8">• WebRTC 推 / 拉流</text>
-    <text x="20" y="124" font-family="Inter, sans-serif" font-size="12" fill="#d4d4d8">• 转封装 / 录制 / 转码</text>
+    <text x="20" y="124" font-family="Inter, sans-serif" font-size="12" fill="#d4d4d8">• 转封装 / 录制 / 转协议</text>
     <text x="20" y="142" font-family="Inter, sans-serif" font-size="12" fill="#d4d4d8">• HTTP API 控制面</text>
   </g>
 
@@ -129,7 +152,7 @@
   <g>
     <path d="M 190 310 C 190 410 1010 410 1010 310" fill="none" stroke="#8ec9bf" stroke-width="2.5" stroke-dasharray="8 6" marker-end="url(#arrowM)" marker-start="url(#arrowM)"/>
     <rect x="510" y="380" width="180" height="30" rx="15" fill="#0a0c0f" stroke="#8ec9bf" stroke-opacity="0.55"/>
-    <text x="600" y="400" text-anchor="middle" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#cdeae5">WebRTC ICE / SRTP 音视频直连</text>
+    <text x="600" y="400" text-anchor="middle" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#cdeae5">WebRTC ICE / SRTP直连</text>
   </g>
 
   <!-- legend small -->

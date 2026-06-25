@@ -19,8 +19,12 @@ export function wireSoloChat(signaling, getMyUserId, { canOpenChat, chatBlockedM
     chatBtn.classList.toggle('has-unread', !!unread);
   }
 
+  // 推/拉流页：聊天面板与流信息互斥，打开聊天时隐藏流信息，关闭后恢复
+  const soloInfo = document.querySelector('.solo-info');
+
   function setChatVisible(visible) {
     chatPanel.classList.toggle('hidden', !visible);
+    if (soloInfo) soloInfo.classList.toggle('hidden', !!visible);
     if (visible) {
       chatInput.focus();
       setChatUnread(false);

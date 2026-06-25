@@ -311,6 +311,7 @@ input { font-family: inherit; }
   min-height: 0;
 }
 .chat-panel.hidden { display: none; }
+.solo-info.hidden  { display: none; }
 .chat-header {
   padding: 14px 16px;
   display: flex;
