@@ -97,6 +97,21 @@ export class MeetingUI {
           e.preventDefault();
           this.toggleTileFocus(key);
         });
+        // iPad / iOS：dblclick 由触摸合成时不可靠，补充 touchend 双击检测
+        tile.addEventListener('touchend', (e) => {
+          const touch = e.changedTouches[0];
+          const now   = Date.now();
+          const last  = tile._lastTap;
+          if (last && now - last.time < 300 &&
+              Math.abs(touch.clientX - last.x) < 30 &&
+              Math.abs(touch.clientY - last.y) < 30) {
+            e.preventDefault();
+            tile._lastTap = null;
+            this.toggleTileFocus(key);
+          } else {
+            tile._lastTap = { time: now, x: touch.clientX, y: touch.clientY };
+          }
+        }, { passive: false });
       }
       if (this.isCallLayout) {
         tile.addEventListener('dblclick', (e) => {
@@ -107,6 +122,26 @@ export class MeetingUI {
           e.preventDefault();
           this.toggleCallPip(key);
         });
+        // iPad / iOS：dblclick 由触摸合成时不可靠，补充 touchend 双击检测
+        tile.addEventListener('touchend', (e) => {
+          // 拖拽中或拖拽刚结束时忽略
+          if (this._pipDrag) return;
+          if (Date.now() < this._suppressPipClickUntil) return;
+          const touch = e.changedTouches[0];
+          const now   = Date.now();
+          const last  = tile._lastTap;
+          if (last && now - last.time < 300 &&
+              Math.abs(touch.clientX - last.x) < 30 &&
+              Math.abs(touch.clientY - last.y) < 30) {
+            e.preventDefault();
+            tile._lastTap = null;
+            // 阻止后续可能触发的 dblclick 事件重复执行
+            this._suppressPipClickUntil = Date.now() + 350;
+            this.toggleCallPip(key);
+          } else {
+            tile._lastTap = { time: now, x: touch.clientX, y: touch.clientY };
+          }
+        }, { passive: false });
         this._bindPipDrag(tile);
       }
 

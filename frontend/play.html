@@ -50,4 +50,29 @@
     </aside>
   </main>
 
-  <footer clas
+  <footer class="toolbar">
+    <button id="btnStart" class="toolbar-btn active" title="开始/停止拉流">▶️<span class="label">开始拉流</span></button>
+    <button id="btnChat" class="toolbar-btn" title="聊天">💬<span class="label">聊天</span></button>
+    <button id="btnLeave" class="toolbar-btn danger" title="退出">⛔<span class="label">退出</span></button>
+  </footer>
+
+  <div id="statusBar" class="status-bar hidden"></div>
+
+  <script type="module" src="js/play.js"></script>
+  <script>
+    (function () {
+      const chip = document.getElementById('streamStateChip');
+      const el   = document.getElementById('streamState');
+      if (!chip || !el) return;
+      const map = (txt) => {
+        if (/失败|错误|断/.test(txt)) return 'error';
+        if (/已建立|拉流中|成功/.test(txt)) return 'active';
+        return '';
+      };
+      const sync = () => chip.setAttribute('data-state', map(el.textContent || ''));
+      new MutationObserver(sync).observe(el, { childList: true, characterData: true, subtree: true });
+      sync();
+    })();
+  </script>
+</body>
+</html>
