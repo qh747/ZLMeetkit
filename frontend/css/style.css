@@ -1508,15 +1508,17 @@ input { font-family: inherit; }
   .meeting-page .toolbar::before, .solo-page .toolbar::before { bottom: 8px; }
 }
 
-/* ----- solo-info 卡片 ----- */
+/* ----- solo-info 卡片（标题布局与聊天面板一致） ----- */
 .solo-info {
   border-radius: var(--radius-lg);
-  padding: 16px 18px 18px;
+  padding: 0;
   background: linear-gradient(180deg, rgba(22, 25, 30, 0.92) 0%, rgba(14, 16, 19, 0.92) 100%);
   border: 1px solid var(--border-strong);
   box-shadow: var(--shadow-md), inset 0 1px 0 rgba(255, 255, 255, 0.04);
   position: relative;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 .solo-info::before {
   content: '';
@@ -1525,29 +1527,29 @@ input { font-family: inherit; }
   width: 3px;
   background: linear-gradient(180deg, var(--accent), var(--warm));
   opacity: 0.85;
+  z-index: 1;
 }
-.solo-info::after {
-  content: '流信息';
-  display: block;
-  position: absolute;
-  top: 14px; right: 14px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.15em;
-  color: var(--muted);
-  text-transform: uppercase;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--border);
+.solo-info::after { display: none; }
+/* 标题与跨度 */
+.solo-info .chat-header {
+  padding-left: 18px;
+  flex-shrink: 0;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 }
-.solo-info > div:not(.hint) {
+.solo-info-body {
+  padding: 14px 18px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+}
+.solo-info-body > div:not(.hint) {
   display: flex;
   align-items: baseline;
   gap: 8px;
   font-size: 13px;
 }
-.solo-info > div:not(.hint) strong {
+.solo-info-body > div:not(.hint) strong {
   flex: 0 0 56px;
   color: var(--muted);
   font-weight: 500;
@@ -1555,14 +1557,14 @@ input { font-family: inherit; }
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-.solo-info > div:not(.hint) > span {
+.solo-info-body > div:not(.hint) > span {
   color: var(--text);
   font-weight: 600;
   font-size: 14px;
   word-break: break-all;
 }
-.solo-info .hint {
-  margin-top: 6px;
+.solo-info-body .hint {
+  margin-top: 2px;
   padding: 10px 12px;
   border-radius: var(--radius-sm);
   background: rgba(46, 196, 182, 0.06);

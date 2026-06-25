@@ -141,13 +141,20 @@ window.addEventListener('beforeunload', () => leave());
 
 initSoloLayout();
 
+// Wire toolbar immediately so buttons (esp. Leave) are always responsive,
+// even if camera / signaling setup fails later.
+wireToolbar();
+setBtn('btnMic', state.micOn ? '' : 'off');
+setBtn('btnCam', state.camOn ? '' : 'off');
+
 main().catch((err) => {
   console.error(err);
   setStatus('启动失败：' + err.message, true, 0);
 });
 
 async function main() {
-  // Preview the camera ASAP.
+  // Preview the camera ASAP.  On failure fall back to an empty stream so the
+  // rest of the page (signaling, leave button, mic/cam toggles) still works.
   try {
     if (state.micOn || state.camOn) {
       state.localStream = await navigator.mediaDevices.getUserMedia({
@@ -160,8 +167,14 @@ async function main() {
       state.localStream = new MediaStream();
     }
   } catch (err) {
-    setStatus('无法访问摄像头/麦克风：' + err.message, true, 0);
-    throw err;
+    // Camera / mic unavailable — reset to off and show a recoverable error.
+    // The user can re-enable devices via the mic / cam buttons, or leave.
+    state.localStream = new MediaStream();
+    state.micOn = false;
+    state.camOn = false;
+    setBtn('btnMic', 'off');
+    setBtn('btnCam', 'off');
+    setStatus('无法访问摄像头/麦克风：' + err.message, true, 6000);
   }
   document.getElementById('localVideo').srcObject = state.localStream;
 
@@ -188,9 +201,6 @@ async function main() {
   });
   state.joined = true;
 
-  wireToolbar();
-  setBtn('btnMic', state.micOn ? '' : 'off');
-  setBtn('btnCam', state.camOn ? '' : 'off');
   statusEl.textContent = '已就绪，点击「开始推流」';
 }
 
