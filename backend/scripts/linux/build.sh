@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # build.sh — 初始化目录结构、编译 ZLMeetServer，并准备运行时配置。
 # 用法：在任意位置执行，脚本自动定位到项目根。
-#   bash backend/scripts/build.sh
+#   bash backend/scripts/linux/build.sh
 
 set -euo pipefail
 
 # ── 路径定位 ──────────────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BACKEND_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+BACKEND_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 SRC_DIR="$BACKEND_DIR/src"
 BIN_DIR="$BACKEND_DIR/bin"
 CONF_DIR="$BIN_DIR/conf"
@@ -46,19 +46,9 @@ if [[ ! -f "$CONFIG_DST" ]]; then
         exit 1
     fi
     cp "$CONFIG_EXAMPLE" "$CONFIG_DST"
-    # 修正相对路径：从 bin/ 出发
-    #   static_dir:  ../../frontend  （bin/ → backend/ → 项目根 → frontend/）
-    #   tls_cert:    cert/cert.pem
-    #   tls_key:     cert/key.pem
-    sed -i \
-        's|static_dir:.*|static_dir: "../../frontend"|' \
-        "$CONFIG_DST"
-    sed -i \
-        's|tls_cert:.*|tls_cert: "cert/cert.pem"|' \
-        "$CONFIG_DST"
-    sed -i \
-        's|tls_key:.*|tls_key:  "cert/key.pem"|' \
-        "$CONFIG_DST"
+    sed -i 's|static_dir:.*|static_dir: "../../frontend"|' "$CONFIG_DST"
+    sed -i 's|tls_cert:.*|tls_cert: "cert/cert.pem"|' "$CONFIG_DST"
+    sed -i 's|tls_key:.*|tls_key:  "cert/key.pem"|' "$CONFIG_DST"
     echo "==> 已生成配置文件: $CONFIG_DST"
     echo "    请按需修改 zlm.api_base 和 zlm.secret"
 else

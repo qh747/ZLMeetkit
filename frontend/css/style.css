@@ -1240,3 +1240,376 @@ input { font-family: inherit; }
   margin: 0;
   padding: 10px 22px;
 }
+
+
+/* =====================================================================
+   Premium overrides v3 — 顶栏迷你横幅 / 玻璃 chip / 浮动胶囊工具栏
+   ===================================================================== */
+
+/* ----- 顶栏：三栏布局（左 biz tag · 中 mini banner · 右 chips） ----- */
+.meeting-page .topbar,
+.solo-page .topbar {
+  padding: 10px 18px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 16px;
+  position: relative;
+  background: linear-gradient(180deg, rgba(20, 23, 27, 0.92) 0%, rgba(13, 15, 18, 0.86) 100%);
+  border-bottom: 1px solid var(--border);
+}
+.meeting-page .topbar::after,
+.solo-page .topbar::after {
+  content: '';
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent-muted), transparent);
+  opacity: 0.6;
+  pointer-events: none;
+}
+.topbar-left { display: flex; align-items: center; min-width: 0; }
+.topbar-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  transition: opacity 0.2s var(--ease), transform 0.2s var(--ease);
+}
+.topbar-center:hover { opacity: 0.92; transform: translateY(-1px); }
+.topbar-banner {
+  height: 36px;
+  width: auto;
+  display: block;
+  pointer-events: none;
+}
+.topbar-chips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.brand-link { display: inline-flex; align-items: center; text-decoration: none; }
+
+/* biz-tag：纯文字胶囊 */
+.biz-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  border-radius: 999px;
+  color: #cdeae5;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-muted);
+  transition: background 0.2s var(--ease), border-color 0.2s var(--ease);
+}
+.biz-tag::before {
+  content: '';
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow);
+  margin-right: 7px;
+}
+.brand-link:hover .biz-tag { background: rgba(46, 196, 182, 0.18); }
+.biz-tag-push { color: #d6e4f0; background: rgba(122, 162, 196, 0.12); border-color: rgba(122, 162, 196, 0.45); }
+.biz-tag-push::before { background: #7aa2c4; box-shadow: 0 0 8px rgba(122, 162, 196, 0.45); }
+.biz-tag-play { color: #f0d4c4; background: rgba(212, 132, 106, 0.12); border-color: rgba(212, 132, 106, 0.45); }
+.biz-tag-play::before { background: #d4846a; box-shadow: 0 0 8px rgba(212, 132, 106, 0.45); }
+
+/* info-chip：信息胶囊 */
+.info-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px 5px 9px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  max-width: 260px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.info-chip .chip-key { color: var(--muted); font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; font-weight: 500; }
+.info-chip .chip-val { color: var(--text); font-weight: 600; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.info-chip.status-chip { padding-left: 11px; }
+.status-chip .status-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: background 0.25s var(--ease), box-shadow 0.25s var(--ease);
+}
+.status-chip[data-state="active"] .status-dot,
+.status-chip[data-state="success"] .status-dot {
+  background: var(--success);
+  box-shadow: 0 0 10px rgba(52, 211, 153, 0.55);
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
+.status-chip[data-state="error"] .status-dot {
+  background: var(--danger);
+  box-shadow: 0 0 10px rgba(240, 82, 82, 0.55);
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(0.92); }
+}
+
+/* 窄屏适配：mini banner 隐藏，让出空间给 chips */
+@media (max-width: 900px) {
+  .meeting-page .topbar, .solo-page .topbar {
+    grid-template-columns: auto 1fr;
+    gap: 8px;
+    padding: 8px 12px;
+  }
+  .topbar-center { display: none; }
+  .biz-tag { font-size: 11px; padding: 4px 10px; }
+  .info-chip { font-size: 11px; padding: 4px 9px 4px 8px; }
+  .info-chip .chip-val { max-width: 140px; }
+}
+
+/* ----- 舞台环境光 ----- */
+.meeting-page, .solo-page {
+  background:
+    radial-gradient(ellipse 60% 50% at 92% 8%, rgba(46, 196, 182, 0.06), transparent 55%),
+    radial-gradient(ellipse 45% 38% at 6% 92%, rgba(196, 165, 116, 0.05), transparent 50%),
+    var(--stage-bg);
+}
+.stage, .solo-stage { position: relative; background: transparent; }
+.stage::before, .solo-stage::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 80% 65% at 50% 40%, black 30%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 65% at 50% 40%, black 30%, transparent 100%);
+  z-index: 0;
+}
+.video-grid, .solo-video-wrap, .solo-info, .chat-panel { position: relative; z-index: 1; }
+
+/* ----- 视频图块 ----- */
+.video-tile {
+  background: radial-gradient(ellipse 90% 70% at 50% 35%, #131619 0%, #050607 100%);
+  box-shadow:
+    var(--shadow-sm),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.02),
+    inset 0 -40px 80px rgba(0, 0, 0, 0.55);
+}
+.video-tile .name-tag {
+  background: rgba(8, 10, 12, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  padding: 5px 11px 5px 9px;
+}
+.video-tile .name-tag::before {
+  content: '';
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 8px rgba(52, 211, 153, 0.5);
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.video-tile.is-self .name-tag { background: rgba(46, 196, 182, 0.18); border-color: rgba(46, 196, 182, 0.4); }
+.video-tile.is-self .name-tag::before { background: var(--accent); box-shadow: 0 0 8px var(--accent-glow); }
+.video-tile .badge { background: rgba(8, 10, 12, 0.7); border: 1px solid rgba(255, 255, 255, 0.08); }
+.video-tile.is-screen { box-shadow: 0 0 0 1px var(--accent-muted), 0 12px 36px rgba(46, 196, 182, 0.18); }
+
+/* ----- 浮动胶囊工具栏 ----- */
+.meeting-page .toolbar, .solo-page .toolbar {
+  position: relative;
+  background: transparent;
+  padding: 14px 20px 20px;
+  pointer-events: none;
+}
+.meeting-page .toolbar > *, .solo-page .toolbar > * { pointer-events: auto; }
+.meeting-page .toolbar::before, .solo-page .toolbar::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100% - 24px);
+  height: calc(100% - 18px);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(28, 31, 36, 0.88) 0%, rgba(14, 16, 19, 0.88) 100%);
+  border: 1px solid var(--border-strong);
+  backdrop-filter: blur(20px) saturate(170%);
+  -webkit-backdrop-filter: blur(20px) saturate(170%);
+  box-shadow:
+    0 20px 50px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(255, 255, 255, 0.025) inset,
+    0 1px 0 rgba(255, 255, 255, 0.06) inset;
+  pointer-events: none;
+  z-index: 0;
+}
+.meeting-page .toolbar > .toolbar-btn, .solo-page .toolbar > .toolbar-btn {
+  position: relative;
+  z-index: 2;
+  background: transparent;
+  border: 1px solid transparent;
+  box-shadow: none;
+}
+.meeting-page .toolbar > .toolbar-btn:hover, .solo-page .toolbar > .toolbar-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+.meeting-page .toolbar > .toolbar-btn.active, .solo-page .toolbar > .toolbar-btn.active {
+  background: var(--accent-soft);
+  border-color: var(--accent-muted);
+}
+.meeting-page .toolbar > .toolbar-btn.off, .solo-page .toolbar > .toolbar-btn.off {
+  background: var(--danger-soft);
+  border-color: rgba(240, 82, 82, 0.4);
+}
+.meeting-page .toolbar > .toolbar-btn.danger, .solo-page .toolbar > .toolbar-btn.danger {
+  background: rgba(240, 82, 82, 0.18);
+  border-color: rgba(240, 82, 82, 0.5);
+  color: #fecaca;
+}
+.meeting-page .toolbar > .toolbar-btn.danger:hover, .solo-page .toolbar > .toolbar-btn.danger:hover {
+  background: rgba(240, 82, 82, 0.28);
+}
+@media (max-width: 720px) {
+  .meeting-page .toolbar, .solo-page .toolbar { padding: 10px 12px 14px; }
+  .meeting-page .toolbar::before, .solo-page .toolbar::before { bottom: 8px; }
+}
+
+/* ----- solo-info 卡片 ----- */
+.solo-info {
+  border-radius: var(--radius-lg);
+  padding: 16px 18px 18px;
+  background: linear-gradient(180deg, rgba(22, 25, 30, 0.92) 0%, rgba(14, 16, 19, 0.92) 100%);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-md), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  position: relative;
+  overflow: hidden;
+}
+.solo-info::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: linear-gradient(180deg, var(--accent), var(--warm));
+  opacity: 0.85;
+}
+.solo-info::after {
+  content: '流信息';
+  display: block;
+  position: absolute;
+  top: 14px; right: 14px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  color: var(--muted);
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+}
+.solo-info > div:not(.hint) {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+}
+.solo-info > div:not(.hint) strong {
+  flex: 0 0 56px;
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.solo-info > div:not(.hint) > span {
+  color: var(--text);
+  font-weight: 600;
+  font-size: 14px;
+  word-break: break-all;
+}
+.solo-info .hint {
+  margin-top: 6px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(46, 196, 182, 0.06);
+  border: 1px solid rgba(46, 196, 182, 0.18);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* ----- solo-tile（无水印，干净） ----- */
+.solo-tile {
+  border: 1px solid var(--border-strong);
+  box-shadow:
+    var(--shadow-md),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.02),
+    inset 0 -50px 100px rgba(0, 0, 0, 0.5);
+  background: radial-gradient(ellipse 70% 60% at 50% 40%, #15191d 0%, #050607 100%);
+}
+
+/* ----- 聊天面板 ----- */
+.chat-panel {
+  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+  border: 1px solid var(--border-strong);
+  border-right: none;
+  background: linear-gradient(180deg, rgba(22, 25, 30, 0.94) 0%, rgba(14, 16, 19, 0.94) 100%);
+}
+.solo-page .chat-panel {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong);
+}
+.chat-panel:not(.hidden) { animation: chat-slide 0.25s var(--ease); }
+@keyframes chat-slide {
+  from { transform: translateX(8px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+.chat-header span::before {
+  content: '';
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow);
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+/* ----- 录制指示器 ----- */
+.video-tile .rec-indicator, .solo-tile .rec-indicator {
+  background: rgba(240, 82, 82, 0.16);
+  border: 1px solid rgba(240, 82, 82, 0.45);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: #fecaca;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  z-index: 2;
+}
+.rec-dot { animation: rec-pulse 1.4s ease-in-out infinite; box-shadow: 0 0 8px rgba(240, 82, 82, 0.6); }
+@keyframes rec-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.85); }
+}
+
+.status-bar {
+  background: linear-gradient(180deg, rgba(22, 25, 30, 0.94) 0%, rgba(14, 16, 19, 0.94) 100%);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-lg);
+}

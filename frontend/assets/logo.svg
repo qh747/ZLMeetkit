@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 88" width="380" height="88" role="img" aria-label="ZLMeetkit">
+  <defs>
+    <linearGradient id="word" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#f4f4f5"/>
+      <stop offset="100%" stop-color="#cdeae5"/>
+    </linearGradient>
+  </defs>
+  <style>
+    .w { font-family:'Geist','Inter',-apple-system,'PingFang SC','Microsoft YaHei',sans-serif; font-weight:700; letter-spacing:-1.6px; }
+  </style>
+  <!-- mark: 4 bars -->
+  <g transform="translate(8 18)" fill="#ffffff">
+    <rect x="0" y="0"  width="32" height="6" rx="1.5"/>
+    <rect x="0" y="13" width="24" height="6" rx="1.5" opacity="0.78"/>
+    <rect x="0" y="26" width="16" height="6" rx="1.5" opacity="0.55"/>
+    <rect x="0" y="39" width="8"  height="6" rx="1.5" opacity="0.35"/>
+  </g>
+  <!-- wordmark -->
+  <text x="62" y="58" class="w" font-size="48" fill="url(#word)">ZLMeetkit</text>
+  <!-- accent underline -->
+  <rect x="66" y="68" width="44" height="3" rx="1.5" fill="#2ec4b6"/>
+</svg>

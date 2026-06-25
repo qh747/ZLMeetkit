@@ -8,8 +8,18 @@
 </head>
 <body class="meeting-page" data-mode="call">
   <header class="topbar">
-    <div class="room-label">通话编号：<span id="roomName">-</span></div>
-    <div class="me-label">我：<span id="myName">-</span></div>
+    <div class="topbar-left">
+      <a class="brand-link" href="index.html" title="返回首页">
+        <span class="biz-tag">1v1 通话</span>
+      </a>
+    </div>
+    <a class="topbar-center brand-link" href="index.html" title="返回首页">
+      <img src="assets/banner-mini.svg" alt="ZLMeetkit" class="topbar-banner" />
+    </a>
+    <div class="topbar-chips">
+      <span class="info-chip"><span class="chip-key">通话编号</span><span class="chip-val" id="roomName">-</span></span>
+      <span class="info-chip"><span class="chip-key">我</span><span class="chip-val" id="myName">-</span></span>
+    </div>
   </header>
 
   <main class="stage">
