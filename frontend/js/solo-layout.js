@@ -1,4 +1,6 @@
-/** Fit .solo-tile to the largest 16:9 rectangle inside .solo-video-wrap. */
+/** Fit .solo-tile to fill the full height of .solo-video-wrap, capping width at
+ *  the 16:9 aspect ratio. This keeps the tile top/bottom borders aligned with
+ *  the .solo-info panel; the video uses object-fit:contain for internal AR. */
 const ASPECT = 16 / 9;
 
 export function initSoloLayout() {
@@ -11,15 +13,13 @@ export function initSoloLayout() {
     const maxH = wrap.clientHeight;
     if (maxW <= 0 || maxH <= 0) return;
 
-    let width = maxW;
-    let height = width / ASPECT;
-    if (height > maxH) {
-      height = maxH;
-      width = height * ASPECT;
-    }
+    // Always fill the full wrap height so borders align with .solo-info.
+    // Width is capped at the 16:9 value; video uses object-fit:contain.
+    const height = maxH;
+    const width  = Math.min(maxW, Math.round(maxH * ASPECT));
 
-    tile.style.width = `${Math.round(width)}px`;
-    tile.style.height = `${Math.round(height)}px`;
+    tile.style.width  = `${width}px`;
+    tile.style.height = `${height}px`;
   };
 
   apply();

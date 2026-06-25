@@ -124,8 +124,8 @@ export class MeetingUI {
         });
         // iPad / iOS：dblclick 由触摸合成时不可靠，补充 touchend 双击检测
         tile.addEventListener('touchend', (e) => {
-          // 拖拽中或拖拽刚结束时忽略
-          if (this._pipDrag) return;
+          // 只在真正拖动过时忽略（moved=false 表示仅点按，不应跳过）
+          if (this._pipDrag?.moved) return;
           if (Date.now() < this._suppressPipClickUntil) return;
           const touch = e.changedTouches[0];
           const now   = Date.now();
