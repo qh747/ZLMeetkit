@@ -1,8 +1,8 @@
-/** Fit .solo-tile to fill the full height of .solo-video-wrap, capping width at
- *  the 16:9 aspect ratio. This keeps the tile top/bottom borders aligned with
- *  the .solo-info panel; the video uses object-fit:contain for internal AR. */
-const ASPECT = 16 / 9;
-
+/** Fit .solo-tile to fill the full extent of .solo-video-wrap.
+ *  Tile always fills the wrap (width AND height) so its borders align with
+ *  the adjacent .solo-info / .chat-panel and there is no gap between the
+ *  tile edge and the sidebar.  The <video> element uses object-fit:contain
+ *  to maintain the stream's native aspect ratio within the tile. */
 export function initSoloLayout() {
   const wrap = document.querySelector('.solo-video-wrap');
   const tile = document.querySelector('.solo-tile');
@@ -13,13 +13,10 @@ export function initSoloLayout() {
     const maxH = wrap.clientHeight;
     if (maxW <= 0 || maxH <= 0) return;
 
-    // Always fill the full wrap height so borders align with .solo-info.
-    // Width is capped at the 16:9 value; video uses object-fit:contain.
-    const height = maxH;
-    const width  = Math.min(maxW, Math.round(maxH * ASPECT));
-
-    tile.style.width  = `${width}px`;
-    tile.style.height = `${height}px`;
+    // Fill the entire wrap so the tile border is flush with the sidebar edge.
+    // Any aspect-ratio mismatch is absorbed by the video's object-fit:contain.
+    tile.style.width  = `${maxW}px`;
+    tile.style.height = `${maxH}px`;
   };
 
   apply();

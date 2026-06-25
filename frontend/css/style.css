@@ -951,7 +951,8 @@ input { font-family: inherit; }
   position: relative;
 }
 .solo-page .chat-panel {
-  flex: 0 0 280px;
+  flex: 1 1 260px;
+  max-width: 420px;
   min-width: 0;
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
@@ -1297,34 +1298,36 @@ input { font-family: inherit; }
 
 .brand-link { display: inline-flex; align-items: center; text-decoration: none; }
 
-/* biz-tag：纯文字胶囊 */
+/* biz-tag：业务标识徽章（矩形，区别于右上角胶囊 info-chip） */
 .biz-tag {
   display: inline-flex;
   align-items: center;
-  padding: 5px 12px;
+  gap: 6px;
+  padding: 5px 12px 5px 10px;
   font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  border-radius: 999px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  border-radius: 10px;
   color: #cdeae5;
-  background: var(--accent-soft);
-  border: 1px solid var(--accent-muted);
-  transition: background 0.2s var(--ease), border-color 0.2s var(--ease);
+  background: rgba(46, 196, 182, 0.08);
+  border: 1.5px solid rgba(46, 196, 182, 0.5);
+  box-shadow: 0 0 10px rgba(46, 196, 182, 0.18), inset 0 1px 0 rgba(46, 196, 182, 0.12);
+  transition: box-shadow 0.2s var(--ease), border-color 0.2s var(--ease);
 }
-.biz-tag::before {
-  content: '';
-  display: inline-block;
-  width: 6px; height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 8px var(--accent-glow);
-  margin-right: 7px;
+.biz-tag::before { display: none; }
+.biz-icon { width: 13px; height: 13px; flex-shrink: 0; opacity: 0.9; }
+.biz-tag-push {
+  color: #d6e4f0;
+  background: rgba(122, 162, 196, 0.10);
+  border-color: rgba(122, 162, 196, 0.55);
+  box-shadow: 0 0 12px rgba(122, 162, 196, 0.22), inset 0 1px 0 rgba(122, 162, 196, 0.12);
 }
-.brand-link:hover .biz-tag { background: rgba(46, 196, 182, 0.18); }
-.biz-tag-push { color: #d6e4f0; background: rgba(122, 162, 196, 0.12); border-color: rgba(122, 162, 196, 0.45); }
-.biz-tag-push::before { background: #7aa2c4; box-shadow: 0 0 8px rgba(122, 162, 196, 0.45); }
-.biz-tag-play { color: #f0d4c4; background: rgba(212, 132, 106, 0.12); border-color: rgba(212, 132, 106, 0.45); }
-.biz-tag-play::before { background: #d4846a; box-shadow: 0 0 8px rgba(212, 132, 106, 0.45); }
+.biz-tag-play {
+  color: #f0d4c4;
+  background: rgba(212, 132, 106, 0.10);
+  border-color: rgba(212, 132, 106, 0.55);
+  box-shadow: 0 0 12px rgba(212, 132, 106, 0.22), inset 0 1px 0 rgba(212, 132, 106, 0.12);
+}
 
 /* info-chip：信息胶囊 */
 .info-chip {
@@ -1373,7 +1376,8 @@ input { font-family: inherit; }
     padding: 8px 12px;
   }
   .topbar-center { display: none; }
-  .biz-tag { font-size: 11px; padding: 4px 10px; }
+  .biz-tag { font-size: 11px; padding: 4px 10px 4px 8px; }
+  .biz-icon { width: 12px; height: 12px; }
   .info-chip { font-size: 11px; padding: 4px 9px 4px 8px; }
   .info-chip .chip-val { max-width: 140px; }
 }
