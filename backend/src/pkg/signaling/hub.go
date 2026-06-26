@@ -1,7 +1,9 @@
 package signaling
 
 import (
+	"errors"
 	"log"
+	"strings"
 	"sync"
 
 	"zlm_meet/backend/pkg/zlm"
@@ -12,13 +14,27 @@ type Hub struct {
 	mu    sync.RWMutex
 	rooms map[string]*Room
 	zlm   *zlm.Client
+	token string
 }
 
-func NewHub(z *zlm.Client) *Hub {
+func NewHub(z *zlm.Client, token string) *Hub {
 	return &Hub{
 		rooms: make(map[string]*Room),
 		zlm:   z,
+		token: token,
 	}
+}
+
+// ValidateToken checks the client-supplied token against server config.
+// When no token is configured, validation is skipped (dev mode).
+func (h *Hub) ValidateToken(token string) error {
+	if h.token == "" {
+		return nil
+	}
+	if strings.TrimSpace(token) != h.token {
+		return errors.New(ErrTokenInvalid)
+	}
+	return nil
 }
 
 // GetOrCreateRoom returns an existing room or creates a new one with the

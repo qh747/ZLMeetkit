@@ -1,5 +1,7 @@
 /** Styled alert dialog matching the app dark-glass UI. */
 
+export const TOKEN_ERROR_MESSAGE = '令牌输入错误';
+
 let dialog;
 let titleEl;
 let messageEl;
@@ -54,4 +56,12 @@ export function showAppAlert(message, { title = '提示' } = {}) {
     };
     dialog.addEventListener('close', done);
   });
+}
+
+export function isTokenError(message) {
+  return message === TOKEN_ERROR_MESSAGE;
+}
+
+export function showTokenErrorAlert() {
+  return showAppAlert(TOKEN_ERROR_MESSAGE, { title: '令牌错误' });
 }

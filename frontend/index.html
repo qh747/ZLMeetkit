@@ -58,22 +58,28 @@
     <dialog id="formDialog" class="home-dialog">
       <form id="bizForm" autocomplete="off">
         <h2 id="formTitle">加入</h2>
-        <div class="form-row form-row-primary" data-field="nickname">
-          <label>
-            <span>昵称</span>
-            <input id="nickname" type="text" maxlength="32" placeholder="比如 Alice" />
-          </label>
-        </div>
         <div class="form-row form-row-primary" data-field="room">
           <label>
             <span id="roomLabel">房间号</span>
             <input id="room" type="text" maxlength="64" placeholder="比如 1001" />
           </label>
         </div>
+        <div class="form-row form-row-primary" data-field="nickname">
+          <label>
+            <span id="nicknameLabel">成员名称</span>
+            <input id="nickname" type="text" maxlength="32" placeholder="比如 Alice" />
+          </label>
+        </div>
         <div class="form-row form-row-primary" data-field="stream">
           <label>
-            <span>流名（仅字母数字、_-.）</span>
+            <span id="streamLabel">流名称</span>
             <input id="streamId" type="text" maxlength="128" placeholder="比如 demo_001" />
+          </label>
+        </div>
+        <div class="form-row form-row-primary" data-field="token">
+          <label>
+            <span>令牌</span>
+            <input id="accessToken" type="text" maxlength="128" placeholder="请输入业务令牌" autocomplete="off" />
           </label>
         </div>
         <div class="form-row form-row-media" data-field="media">
@@ -107,20 +113,24 @@
   </main>
 
   <script type="module">
-    import { showAppAlert } from './js/ui-alert.js';
+    import { showAppAlert, showTokenErrorAlert, isTokenError } from './js/ui-alert.js';
     import { getStoredQuality, setStoredQuality } from './js/quality.js';
 
     const dialog = document.getElementById('formDialog');
     const form = document.getElementById('bizForm');
     const title = document.getElementById('formTitle');
     const roomLabel = document.getElementById('roomLabel');
+    const nicknameLabel = document.getElementById('nicknameLabel');
+    const streamLabel = document.getElementById('streamLabel');
     const fields = {
-      nickname: form.querySelector('[data-field="nickname"]'),
       room: form.querySelector('[data-field="room"]'),
+      nickname: form.querySelector('[data-field="nickname"]'),
       stream: form.querySelector('[data-field="stream"]'),
+      token: form.querySelector('[data-field="token"]'),
       media: form.querySelector('[data-field="media"]'),
     };
     const inputs = {
+      token: document.getElementById('accessToken'),
       nickname: document.getElementById('nickname'),
       room: document.getElementById('room'),
       stream: document.getElementById('streamId'),
@@ -129,6 +139,8 @@
       quality: document.getElementById('videoQuality'),
     };
 
+    const SAVED_TOKEN = sessionStorage.getItem('zlm.token') || '';
+    if (SAVED_TOKEN) inputs.token.value = SAVED_TOKEN;
     const SAVED_NAME = sessionStorage.getItem('zlm.nickname') || '';
     if (SAVED_NAME) inputs.nickname.value = SAVED_NAME;
     const SAVED_ROOM = sessionStorage.getItem('zlm.room') || '';
@@ -160,36 +172,42 @@
         case 'meeting':
           title.textContent = '加入多人会议';
           roomLabel.textContent = '房间号';
-          showFields({ nickname: true, room: true, stream: false, media: true });
-          fields.nickname.querySelector('span').textContent = '昵称';
+          nicknameLabel.textContent = '成员名称';
+          streamLabel.textContent = '流名称';
+          showFields({ room: true, nickname: true, stream: false, token: true, media: true });
           inputs.nickname.placeholder = '比如 Alice';
           inputs.room.placeholder = '比如 1001';
           break;
         case 'call':
           title.textContent = '加入 1v1 通话';
-          roomLabel.textContent = '通话编号';
-          showFields({ nickname: true, room: true, stream: false, media: true });
-          fields.nickname.querySelector('span').textContent = '昵称';
+          roomLabel.textContent = '房间号';
+          nicknameLabel.textContent = '成员名称';
+          streamLabel.textContent = '流名称';
+          showFields({ room: true, nickname: true, stream: false, token: true, media: true });
           inputs.nickname.placeholder = '比如 Alice';
           inputs.room.placeholder = '比如 alice-bob';
           break;
         case 'push':
           title.textContent = '推流';
           roomLabel.textContent = '房间号';
-          showFields({ nickname: false, room: true, stream: true, media: true });
+          streamLabel.textContent = '流名称';
+          showFields({ room: true, nickname: false, stream: true, token: true, media: true });
           inputs.room.placeholder = '比如 live';
+          inputs.stream.placeholder = '比如 demo_001';
           if (!inputs.stream.value) inputs.stream.value = 'pub_' + Date.now();
           break;
         case 'play':
           title.textContent = '拉流';
           roomLabel.textContent = '房间号';
-          showFields({ nickname: true, room: true, stream: true, media: false });
-          fields.nickname.querySelector('span').textContent = '成员名称';
+          nicknameLabel.textContent = '成员名称';
+          streamLabel.textContent = '流名称';
+          showFields({ room: true, nickname: true, stream: true, token: true, media: false });
           inputs.nickname.placeholder = '比如 观众甲';
           inputs.room.placeholder = '比如 live';
+          inputs.stream.placeholder = '比如 demo_001';
           break;
         default:
-          fields.nickname.querySelector('span').textContent = '昵称';
+          nicknameLabel.textContent = '成员名称';
           inputs.nickname.placeholder = '比如 Alice';
           break;
       }
@@ -213,6 +231,7 @@
       const nickname = inputs.nickname.value.trim();
       const room = inputs.room.value.trim();
       const stream = inputs.stream.value.trim();
+      const token = inputs.token.value.trim();
 
       if (currentBiz === 'meeting' || currentBiz === 'call') {
         if (!nickname || !room) return;
@@ -241,11 +260,16 @@
             room,
             nickname: nickname || undefined,
             streamId: stream || undefined,
+            token: token || undefined,
           }),
         });
         const data = await resp.json().catch(() => ({}));
         if (!resp.ok || !data.ok) {
-          await showAppAlert(data.message || '无法进入，请稍后重试', { title: '无法进入' });
+          if (isTokenError(data.message)) {
+            await showTokenErrorAlert();
+          } else {
+            await showAppAlert(data.message || '无法进入，请稍后重试', { title: '无法进入' });
+          }
           return;
         }
       } catch (_) {
@@ -254,6 +278,8 @@
       } finally {
         submitBtn.disabled = false;
       }
+
+      sessionStorage.setItem('zlm.token', token);
 
       if (currentBiz === 'meeting' || currentBiz === 'call' || currentBiz === 'push') {
         sessionStorage.setItem('zlm.micOn', inputs.mic.checked ? 'true' : 'false');

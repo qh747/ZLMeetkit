@@ -231,6 +231,9 @@ func (c *Client) handleJoin(env *Envelope) error {
 	if err := decodePayload(env, &p); err != nil {
 		return fmt.Errorf("decode join: %w", err)
 	}
+	if err := c.hub.ValidateToken(p.Token); err != nil {
+		return err
+	}
 	if p.Room == "" {
 		return errors.New("room is required")
 	}

@@ -12,6 +12,9 @@ static_dir: "../frontend"
 # 允许的 WebSocket Origin，留空表示不校验（开发用）
 allowed_origins: []
 
+# 业务令牌；留空表示不校验（开发用）。前端发起业务时需携带一致令牌。
+token: ""
+
 # ZLMediaKit 配置
 # 提示：ZLM 流路径中的 app 字段由前端「房间号」决定，不在此处配置。
 zlm:

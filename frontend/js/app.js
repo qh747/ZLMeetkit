@@ -19,7 +19,7 @@ import {
   wireQualityUI,
   syncQualityButtonLabel,
 } from './quality.js';
-import { showAppAlert } from './ui-alert.js';
+import { showAppAlert, isTokenError, showTokenErrorAlert } from './ui-alert.js';
 
 // Resolve mode: meeting.html uses 'meeting'; call.html uses 'call'.
 const urlParams = new URLSearchParams(location.search);
@@ -33,6 +33,7 @@ const state = {
   myUserId: null,
   myNickname: sessionStorage.getItem('zlm.nickname') || '',
   room: sessionStorage.getItem('zlm.room') || '',
+  token: sessionStorage.getItem('zlm.token') || '',
   micOn: sessionStorage.getItem('zlm.micOn') !== 'false',
   camOn: sessionStorage.getItem('zlm.camOn') !== 'false',
   quality: getStoredQuality(),
@@ -202,6 +203,7 @@ async function main() {
     room: state.room,
     nickname: state.myNickname,
     mode: state.mode,
+    token: state.token,
     micOn: state.micOn,
     camOn: state.camOn,
   });
@@ -339,8 +341,13 @@ function wireSignalHandlers(sig) {
     ui.upsertTile(tileKey, { recording: p.recording });
   });
 
-  sig.on('error', (p) => {
+  sig.on('error', async (p) => {
     console.warn('[server error]', p.message);
+    if (isTokenError(p.message)) {
+      await showTokenErrorAlert();
+      location.href = 'index.html';
+      return;
+    }
     ui.showStatus('服务器：' + p.message, { error: true });
   });
 

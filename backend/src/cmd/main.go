@@ -26,7 +26,7 @@ func main() {
 	}
 
 	zlmClient := zlm.New(cfg.ZLM)
-	hub := signaling.NewHub(zlmClient)
+	hub := signaling.NewHub(zlmClient, cfg.Token)
 	handler := server.New(cfg, hub)
 
 	srv := &http.Server{

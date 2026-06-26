@@ -4,11 +4,12 @@ import { Signaling } from './signaling.js';
 import { playStream, closePC } from './webrtc.js';
 import { initSoloLayout } from './solo-layout.js';
 import { wireSoloChat } from './solo-chat.js';
-import { showAppAlert } from './ui-alert.js';
+import { showAppAlert, isTokenError, showTokenErrorAlert } from './ui-alert.js';
 
 const room = sessionStorage.getItem('zlm.room') || '';
 const streamId = sessionStorage.getItem('zlm.streamId') || '';
 const nickname = sessionStorage.getItem('zlm.nickname') || '';
+const token = sessionStorage.getItem('zlm.token') || '';
 if (!room || !streamId || !nickname) {
   location.href = 'index.html?biz=play';
 }
@@ -162,6 +163,14 @@ async function main() {
   // Request-scoped errors (webrtc-offer, record-*) carry reqId and reject the
   // pending promise; ignore fire-and-forget error broadcasts during pull setup.
   state.signaling.on('_close', () => setStatus('信令已断开', true, 0));
+  state.signaling.on('error', async (p) => {
+    if (isTokenError(p.message)) {
+      await showTokenErrorAlert();
+      location.href = 'index.html?biz=play';
+      return;
+    }
+    setStatus('服务器：' + p.message, true);
+  });
   state.signaling.on('joined', (p) => { state.myUserId = p.userId; });
   state.signaling.on('peer-stream-started', (p) => {
     if (p.streamId !== streamId) return;
@@ -192,6 +201,7 @@ async function main() {
     room,
     nickname,
     mode: 'solo',
+    token,
   });
   state.joined = true;
 

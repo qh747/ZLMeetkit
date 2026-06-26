@@ -13,13 +13,14 @@ import {
   wireQualityUI,
   syncQualityButtonLabel,
 } from './quality.js';
-import { showAppAlert } from './ui-alert.js';
+import { showAppAlert, isTokenError, showTokenErrorAlert } from './ui-alert.js';
 
 import { initSoloLayout } from './solo-layout.js';
 import { wireSoloChat } from './solo-chat.js';
 
 const room = sessionStorage.getItem('zlm.room') || '';
 const streamId = sessionStorage.getItem('zlm.streamId') || '';
+const token = sessionStorage.getItem('zlm.token') || '';
 if (!room || !streamId) {
   location.href = 'index.html';
 }
@@ -183,7 +184,14 @@ async function main() {
   const host = location.host || 'localhost:8080';
   state.signaling = new Signaling(`${scheme}//${host}/ws`);
   state.signaling.on('record-state', onRecordState);
-  state.signaling.on('error', (p) => setStatus('服务器：' + p.message, true));
+  state.signaling.on('error', async (p) => {
+    if (isTokenError(p.message)) {
+      await showTokenErrorAlert();
+      location.href = 'index.html?biz=push';
+      return;
+    }
+    setStatus('服务器：' + p.message, true);
+  });
   state.signaling.on('_close', () => setStatus('信令已断开', true, 0));
   state.signaling.on('joined', (p) => { state.myUserId = p.userId; });
   await state.signaling.connect();
@@ -198,6 +206,7 @@ async function main() {
     room,
     nickname: 'publisher',
     mode: 'solo',
+    token,
   });
   state.joined = true;
 

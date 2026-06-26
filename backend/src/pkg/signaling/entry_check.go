@@ -7,12 +7,13 @@ import (
 
 // Entry check error messages returned to the home page.
 const (
-	ErrRoomInUse         = "房间已经被使用"
-	ErrUserInUse         = "用户已经被使用"
-	ErrMemberNameInUse   = "成员名称已被使用"
+	ErrRoomInUse          = "房间已经被使用"
+	ErrUserInUse          = "用户已经被使用"
+	ErrMemberNameInUse    = "成员名称已被使用"
 	ErrMemberNameRequired = "成员名称不能为空"
-	ErrStreamIDInUse     = "流id已经被使用"
-	ErrStreamNotFound    = "流不存在"
+	ErrStreamIDInUse      = "流id已经被使用"
+	ErrStreamNotFound     = "流不存在"
+	ErrTokenInvalid       = "令牌输入错误"
 )
 
 // bizToMode maps front-end business keys to signaling room modes.
@@ -29,7 +30,11 @@ func bizToMode(biz string) string {
 
 // CheckEntry validates home-page form input against active signaling state.
 // All checks are in-memory on the hub; ZLM is not queried.
-func (h *Hub) CheckEntry(biz, room, nickname, streamID string) error {
+func (h *Hub) CheckEntry(biz, room, nickname, streamID, token string) error {
+	if err := h.ValidateToken(token); err != nil {
+		return err
+	}
+
 	biz = strings.TrimSpace(biz)
 	room = strings.TrimSpace(room)
 	nickname = strings.TrimSpace(nickname)

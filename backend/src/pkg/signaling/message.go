@@ -26,6 +26,7 @@ type JoinPayload struct {
 	Room     string `json:"room"`
 	Nickname string `json:"nickname"`
 	Mode     string `json:"mode,omitempty"` // meeting | call | solo (default meeting)
+	Token    string `json:"token,omitempty"`
 	MicOn    *bool  `json:"micOn,omitempty"`
 	CamOn    *bool  `json:"camOn,omitempty"`
 }

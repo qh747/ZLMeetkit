@@ -22,6 +22,8 @@ type Config struct {
 	TLSKey         string    `yaml:"tls_key"`
 	StaticDir      string    `yaml:"static_dir"`
 	AllowedOrigins []string  `yaml:"allowed_origins"`
+	// Token is required on business requests when non-empty (entry-check + join).
+	Token          string    `yaml:"token"`
 	ZLM            ZLMConfig `yaml:"zlm"`
 }
 

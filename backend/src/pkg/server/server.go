@@ -44,13 +44,14 @@ func New(cfg *config.Config, hub *signaling.Hub) http.Handler {
 			Room     string `json:"room"`
 			Nickname string `json:"nickname,omitempty"`
 			StreamID string `json:"streamId,omitempty"`
+			Token    string `json:"token,omitempty"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		if err := hub.CheckEntry(req.Biz, req.Room, req.Nickname, req.StreamID); err != nil {
+		if err := hub.CheckEntry(req.Biz, req.Room, req.Nickname, req.StreamID, req.Token); err != nil {
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"ok":      false,
 				"message": err.Error(),
