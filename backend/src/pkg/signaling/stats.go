@@ -6,6 +6,7 @@ import "time"
 type ClientBrief struct {
 	UserID    string       `json:"userId"`
 	Nickname  string       `json:"nickname"`
+	SoloRole  string       `json:"soloRole,omitempty"` // push | play in solo rooms
 	MicOn     bool         `json:"micOn"`
 	CamOn     bool         `json:"camOn"`
 	Streams   []StreamInfo `json:"streams"`
@@ -71,6 +72,7 @@ func (h *Hub) StatsSnapshot() HubStats {
 			brief := ClientBrief{
 				UserID:    c.UserID,
 				Nickname:  c.Nickname,
+				SoloRole:  c.soloRole,
 				MicOn:     c.micOn,
 				CamOn:     c.camOn,
 				Recording: recording,

@@ -41,7 +41,17 @@
         <span class="admin-header-tagline">REALTIME · MULTI-PARTY · VIDEO</span>
       </div>
       <div class="admin-header-actions">
-        <span id="lastRefresh" class="admin-refresh-time">—</span>
+        <div class="admin-header-summary" aria-live="polite">
+          <span class="admin-summary-item">
+            <span id="totalRooms" class="admin-summary-value">0</span>
+            <span class="admin-summary-label">房间</span>
+          </span>
+          <span class="admin-summary-divider" aria-hidden="true"></span>
+          <span class="admin-summary-item">
+            <span id="totalClients" class="admin-summary-value">0</span>
+            <span class="admin-summary-label">在线</span>
+          </span>
+        </div>
         <button type="button" id="refreshBtn" class="admin-refresh-btn">刷新</button>
         <button type="button" id="logoutBtn" class="admin-logout-btn">退出</button>
       </div>
@@ -55,15 +65,7 @@
         </button>
       </nav>
       <div class="admin-sidebar-footer">
-        <div class="admin-sidebar-footer-deck" aria-live="polite" aria-label="已登录时长">
-          <img
-            src="/assets/admin-sidebar-waveform.svg"
-            alt=""
-            class="admin-sidebar-footer-wave"
-            aria-hidden="true"
-          />
-          <div id="sessionDuration" class="admin-sidebar-session-time"></div>
-        </div>
+        <div id="sessionDuration" class="admin-sidebar-session-time" aria-live="polite" aria-label="已登录时长"></div>
       </div>
     </aside>
 

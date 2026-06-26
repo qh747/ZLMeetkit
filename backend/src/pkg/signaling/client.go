@@ -26,6 +26,7 @@ const (
 type Client struct {
 	UserID   string
 	Nickname string
+	soloRole string // SoloRolePush | SoloRolePlay when in a solo room
 
 	hub  *Hub
 	room *Room
@@ -249,6 +250,16 @@ func (c *Client) handleJoin(env *Envelope) error {
 	default:
 		return fmt.Errorf("invalid mode: %q", mode)
 	}
+	if mode == RoomModeSolo {
+		switch p.SoloRole {
+		case SoloRolePush, "":
+			c.soloRole = SoloRolePush
+		case SoloRolePlay:
+			c.soloRole = SoloRolePlay
+		default:
+			return fmt.Errorf("invalid soloRole: %q", p.SoloRole)
+		}
+	}
 	c.Nickname = p.Nickname
 	if p.MicOn != nil {
 		c.mu.Lock()
@@ -387,6 +398,7 @@ func (c *Client) handleWebRTCOffer(env *Envelope) error {
 		c.streams["solo"] = streamID
 		c.mu.Unlock()
 		c.room.broadcastStreamStarted(c, "solo", streamID)
+		c.hub.notifyStatsChanged()
 	}
 
 	c.send(TypeWebRTCAnswer, env.ReqID, WebRTCAnswerPayload{
@@ -438,6 +450,9 @@ func (c *Client) handleStreamStopped(env *Envelope) error {
 		// Broadcast first so watching clients tear down immediately — don't
 		// wait for the ZLM HTTP call to complete.
 		c.room.broadcastStreamStopped(c, p.Kind, sid)
+		if p.Kind == "solo" {
+			c.hub.notifyStatsChanged()
+		}
 		go func(app, streamID string) {
 			if err := c.hub.zlm.CloseStream(app, streamID); err != nil {
 				log.Warn().Err(err).Str("user_id", c.UserID).Str("stream", streamID).Msg("close stream")

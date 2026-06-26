@@ -18,6 +18,8 @@ const adminTokenHeader = "X-Admin-Token"
 // NewAdmin builds the HTTPS admin handler (API + static admin UI).
 func NewAdmin(cfg *config.Config, hub *signaling.Hub) http.Handler {
 	mux := http.NewServeMux()
+	dashboardHub := newAdminDashboardHub(hub)
+	originCheck := buildOriginChecker(cfg.AllowedOrigins)
 
 	mux.HandleFunc("/api/admin/login", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -47,38 +49,13 @@ func NewAdmin(cfg *config.Config, hub *signaling.Hub) http.Handler {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		hubStats := hub.StatsSnapshot()
-
-		var zlmStreams []interface{}
-		var zlmError string
-		media, err := hub.ZLM().GetMediaList()
-		if err != nil {
-			zlmError = err.Error()
-			log.Warn().Err(err).Msg("admin getMediaList")
-		} else {
-			zlmStreams = make([]interface{}, len(media))
-			for i, m := range media {
-				zlmStreams[i] = m
-			}
-		}
-
-		// Count unique app/stream pairs (ZLM may list multiple schemas per stream).
-		uniqueStreams := make(map[string]struct{})
-		for _, m := range media {
-			uniqueStreams[m.App+"/"+m.Stream] = struct{}{}
-		}
-
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"hub": hubStats,
-			"zlm": map[string]any{
-				"streamCount": len(uniqueStreams),
-				"mediaCount":  len(media),
-				"streams":     zlmStreams,
-				"error":       zlmError,
-			},
-		})
+		_ = json.NewEncoder(w).Encode(buildDashboardPayload(hub, true))
 	}))
+
+	mux.HandleFunc("/api/admin/ws", func(w http.ResponseWriter, r *http.Request) {
+		dashboardHub.handleWS(w, r, originCheck)
+	})
 
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("ok"))

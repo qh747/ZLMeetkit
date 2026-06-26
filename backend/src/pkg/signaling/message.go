@@ -21,11 +21,18 @@ const (
 	RoomModeSolo    = "solo"    // single-client publish or play; no broadcast
 )
 
+// Solo business role (mode=solo only). Distinct from whether media is publishing.
+const (
+	SoloRolePush = "push"
+	SoloRolePlay = "play"
+)
+
 // c2s join: client identifies itself and the room it wants to enter.
 type JoinPayload struct {
 	Room     string `json:"room"`
 	Nickname string `json:"nickname"`
-	Mode     string `json:"mode,omitempty"` // meeting | call | solo (default meeting)
+	Mode     string `json:"mode,omitempty"`     // meeting | call | solo (default meeting)
+	SoloRole string `json:"soloRole,omitempty"` // push | play when mode=solo
 	Token    string `json:"token,omitempty"`
 	MicOn    *bool  `json:"micOn,omitempty"`
 	CamOn    *bool  `json:"camOn,omitempty"`

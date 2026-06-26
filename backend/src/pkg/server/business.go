@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -200,27 +199,4 @@ func NewBusiness(cfg *config.Config, hub *signaling.Hub) http.Handler {
 	}
 
 	return mux
-}
-
-func buildOriginChecker(allowed []string) func(r *http.Request) bool {
-	if len(allowed) == 0 {
-		// No allow-list configured: permit all (dev mode).
-		return func(_ *http.Request) bool { return true }
-	}
-	allowSet := make(map[string]struct{}, len(allowed))
-	for _, o := range allowed {
-		allowSet[o] = struct{}{}
-	}
-	return func(r *http.Request) bool {
-		origin := r.Header.Get("Origin")
-		if origin == "" {
-			return true // non-browser clients
-		}
-		u, err := url.Parse(origin)
-		if err != nil {
-			return false
-		}
-		_, ok := allowSet[u.Scheme+"://"+u.Host]
-		return ok
-	}
 }

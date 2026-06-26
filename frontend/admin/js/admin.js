@@ -1,7 +1,7 @@
 (function () {
   const TOKEN_KEY = 'zlmeetkit_admin_token';
   const LOGIN_AT_KEY = 'zlmeetkit_admin_login_at';
-  const REFRESH_MS = 10000;
+  const WS_RECONNECT_MS = 3000;
 
   const loginView = document.getElementById('loginView');
   const appView = document.getElementById('appView');
@@ -10,12 +10,15 @@
   const loginSubmit = document.getElementById('loginSubmit');
   const logoutBtn = document.getElementById('logoutBtn');
   const refreshBtn = document.getElementById('refreshBtn');
+  const totalRoomsEl = document.getElementById('totalRooms');
+  const totalClientsEl = document.getElementById('totalClients');
   const dashboardTab = document.getElementById('dashboardTab');
-  const lastRefresh = document.getElementById('lastRefresh');
   const sessionDuration = document.getElementById('sessionDuration');
   const roomCards = document.getElementById('roomCards');
 
-  let refreshTimer = null;
+  let dashboardWs = null;
+  let wsReconnectTimer = null;
+  let wsManualClose = false;
   let sessionTimer = null;
   let loginAlertDialog = null;
   let loginAlertTitle = null;
@@ -65,21 +68,81 @@
       key: 'meeting',
       label: '会议房间',
       desc: '多人视频会议',
-      icon: '◫',
+      icon: '👥',
+      statKind: 'rooms-online',
     },
     {
       key: 'call',
       label: '1v1 通话房间',
       desc: '双人实时通话',
-      icon: '◎',
+      icon: '📞',
+      statKind: 'rooms-online',
     },
     {
       key: 'solo',
       label: '推/拉流房间',
       desc: '单向推流或拉流',
-      icon: '▷',
+      statKind: 'push-play',
     },
   ];
+
+  function renderRoomIcon(type) {
+    if (type.key === 'solo') {
+      return (
+        '<div class="admin-room-card-icon admin-room-card-icon--stream" aria-hidden="true">' +
+          '<svg class="admin-room-card-stream-svg" viewBox="0 0 24 24" focusable="false">' +
+            '<path class="admin-room-card-stream-up" d="M12 5v4.5M8.5 9L12 5.5 15.5 9" />' +
+            '<path class="admin-room-card-stream-divider" d="M6 12h12" />' +
+            '<path class="admin-room-card-stream-down" d="M12 19v-4.5M8.5 15L12 18.5 15.5 15" />' +
+          '</svg>' +
+        '</div>'
+      );
+    }
+    return '<div class="admin-room-card-icon" aria-hidden="true">' + type.icon + '</div>';
+  }
+
+  function soloPushPullCounts(hub) {
+    var push = 0;
+    var pull = 0;
+    (hub.rooms || []).forEach(function (room) {
+      if (room.mode !== 'solo') return;
+      (room.clients || []).forEach(function (client) {
+        if (client.soloRole === 'play') pull++;
+        else push++;
+      });
+    });
+    return { push: push, pull: pull };
+  }
+
+  function renderStatBlock(value, label, extraClass) {
+    return (
+      '<div class="admin-room-card-stat' + (extraClass ? ' ' + extraClass : '') + '">' +
+        '<div class="admin-room-card-value">' + value + '</div>' +
+        '<div class="admin-room-card-sub">' + label + '</div>' +
+      '</div>'
+    );
+  }
+
+  function renderCardStats(type, hub, byMode, clientsByMode) {
+    if (type.statKind === 'push-play') {
+      var solo = soloPushPullCounts(hub);
+      return (
+        '<div class="admin-room-card-stats admin-room-card-stats--dual">' +
+          renderStatBlock(solo.push, '推流', 'admin-room-card-stat--push') +
+          renderStatBlock(solo.pull, '拉流', 'admin-room-card-stat--play') +
+        '</div>'
+      );
+    }
+
+    var rooms = byMode[type.key] || 0;
+    var clients = clientsByMode[type.key] || 0;
+    return (
+      '<div class="admin-room-card-stats admin-room-card-stats--dual">' +
+        renderStatBlock(rooms, '房间') +
+        renderStatBlock(clients, '人在线') +
+      '</div>'
+    );
+  }
 
   function getToken() {
     return sessionStorage.getItem(TOKEN_KEY) || '';
@@ -95,7 +158,7 @@
     loginView.setAttribute('aria-hidden', 'false');
     appView.classList.remove('is-active');
     appView.setAttribute('aria-hidden', 'true');
-    stopAutoRefresh();
+    stopDashboardWs(true);
     stopSessionTimer();
     loginSubmit.disabled = false;
     loginSubmit.textContent = '登录';
@@ -107,7 +170,7 @@
     appView.classList.add('is-active');
     appView.setAttribute('aria-hidden', 'false');
     beginSession();
-    startAutoRefresh();
+    connectDashboardWs();
   }
 
   function getLoginAt() {
@@ -161,21 +224,80 @@
     sessionDuration.textContent = formatDuration(loginAt ? Date.now() - loginAt : 0);
   }
 
-  function stopAutoRefresh() {
-    if (refreshTimer) {
-      clearInterval(refreshTimer);
-      refreshTimer = null;
+  function dashboardWsUrl(token) {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return proto + '//' + location.host + '/api/admin/ws?token=' + encodeURIComponent(token);
+  }
+
+  function clearWsReconnectTimer() {
+    if (wsReconnectTimer) {
+      clearTimeout(wsReconnectTimer);
+      wsReconnectTimer = null;
     }
   }
 
-  function startAutoRefresh() {
-    stopAutoRefresh();
-    refreshTimer = setInterval(loadDashboard, REFRESH_MS);
+  function scheduleWsReconnect() {
+    if (wsManualClose || wsReconnectTimer) return;
+    wsReconnectTimer = setTimeout(function () {
+      wsReconnectTimer = null;
+      connectDashboardWs();
+    }, WS_RECONNECT_MS);
   }
 
-  function formatTime() {
-    const d = new Date();
-    return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  function stopDashboardWs(manual) {
+    wsManualClose = manual;
+    clearWsReconnectTimer();
+    if (dashboardWs) {
+      dashboardWs.close();
+      dashboardWs = null;
+    }
+    wsManualClose = false;
+  }
+
+  function connectDashboardWs() {
+    const token = getToken();
+    if (!token || !appView.classList.contains('is-active')) return;
+
+    stopDashboardWs(true);
+    wsManualClose = false;
+
+    const ws = new WebSocket(dashboardWsUrl(token));
+    dashboardWs = ws;
+
+    ws.onmessage = function (event) {
+      let data;
+      try {
+        data = JSON.parse(event.data);
+      } catch (e) {
+        console.error(e);
+        return;
+      }
+      if (data.type === 'dashboard') {
+        applyDashboard(data);
+      }
+    };
+
+    ws.onclose = function () {
+      if (dashboardWs === ws) dashboardWs = null;
+      if (!wsManualClose && getToken() && appView.classList.contains('is-active')) {
+        scheduleWsReconnect();
+      }
+    };
+  }
+
+  function requestDashboardRefresh() {
+    if (dashboardWs && dashboardWs.readyState === WebSocket.OPEN) {
+      dashboardWs.send(JSON.stringify({ type: 'refresh' }));
+      return;
+    }
+    loadDashboard();
+  }
+
+  function applyDashboard(data) {
+    const hub = data.hub || {};
+    if (totalRoomsEl) totalRoomsEl.textContent = hub.totalRooms != null ? hub.totalRooms : 0;
+    if (totalClientsEl) totalClientsEl.textContent = hub.totalClients != null ? hub.totalClients : 0;
+    renderRoomCards(hub);
   }
 
   async function apiLogin(token) {
@@ -200,29 +322,19 @@
     return res.json();
   }
 
-  function applyDashboard(data) {
-    renderRoomCards(data.hub || {});
-    lastRefresh.textContent = '更新于 ' + formatTime();
-  }
-
   function renderRoomCards(hub) {
     const byMode = hub.roomsByMode || {};
     const clientsByMode = hub.clientsByMode || {};
 
     roomCards.innerHTML = ROOM_TYPES.map(function (type) {
-      const rooms = byMode[type.key] || 0;
-      const clients = clientsByMode[type.key] || 0;
       return (
         '<article class="admin-room-card admin-room-card--' + type.key + '">' +
-          '<div class="admin-room-card-icon" aria-hidden="true">' + type.icon + '</div>' +
-          '<div class="admin-room-card-body">' +
+          '<div class="admin-room-card-head">' +
+            renderRoomIcon(type) +
             '<h3 class="admin-room-card-label">' + type.label + '</h3>' +
-            '<p class="admin-room-card-desc">' + type.desc + '</p>' +
           '</div>' +
-          '<div class="admin-room-card-stats">' +
-            '<div class="admin-room-card-value">' + rooms + '</div>' +
-            '<div class="admin-room-card-sub">' + clients + ' 人在线</div>' +
-          '</div>' +
+          '<p class="admin-room-card-desc">' + type.desc + '</p>' +
+          renderCardStats(type, hub, byMode, clientsByMode) +
         '</article>'
       );
     }).join('');
@@ -247,7 +359,6 @@
       applyDashboard(data);
       return data;
     } catch (e) {
-      lastRefresh.textContent = '刷新失败';
       console.error(e);
       return null;
     }
@@ -306,17 +417,7 @@
       setToken(token);
       loginToken.value = '';
       sessionStorage.setItem(LOGIN_AT_KEY, String(Date.now()));
-
-      const data = await apiDashboard(token);
-      if (data.unauthorized) {
-        setToken('');
-        endSession();
-        showLoginAlert('令牌校验失败，请检查后重试');
-        return;
-      }
-
       showApp();
-      applyDashboard(data);
     } catch (err) {
       showLoginAlert('网络错误，请稍后重试');
       console.error(err);
@@ -333,14 +434,14 @@
     showLogin();
   });
 
-  refreshBtn.addEventListener('click', loadDashboard);
+  refreshBtn.addEventListener('click', requestDashboardRefresh);
 
   if (dashboardTab) {
     dashboardTab.addEventListener('click', function () {
       document.querySelectorAll('.admin-nav-item').forEach(function (el) {
         el.classList.toggle('active', el === dashboardTab);
       });
-      loadDashboard();
+      requestDashboardRefresh();
     });
   }
 

@@ -206,6 +206,7 @@ async function main() {
     room,
     nickname: 'publisher',
     mode: 'solo',
+    soloRole: 'push',
     token,
   });
   state.joined = true;

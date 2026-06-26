@@ -142,6 +142,7 @@ func (r *Room) addClient(c *Client, requestedMode string) error {
 
 	// Solo rooms are private; skip peer broadcast entirely.
 	if !r.isBroadcast() {
+		r.hub.notifyStatsChanged()
 		return nil
 	}
 
@@ -155,6 +156,7 @@ func (r *Room) addClient(c *Client, requestedMode string) error {
 	}
 	c.mu.RUnlock()
 	r.broadcastExcept(c.UserID, TypePeerJoined, joinedPayload)
+	r.hub.notifyStatsChanged()
 	return nil
 }
 
@@ -217,6 +219,7 @@ func (r *Room) removeClient(c *Client) {
 	}(recordSids, sids)
 
 	r.hub.removeRoomIfEmpty(r)
+	r.hub.notifyStatsChanged()
 }
 
 // broadcastExcept sends a message to every client except the one with the given ID.

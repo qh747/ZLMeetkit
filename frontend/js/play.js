@@ -205,6 +205,7 @@ async function main() {
     room,
     nickname,
     mode: 'solo',
+    soloRole: 'play',
     token,
   });
   state.joined = true;

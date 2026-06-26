@@ -16,6 +16,9 @@ type Hub struct {
 	rooms map[string]*Room
 	zlm   *zlm.Client
 	token string
+
+	statsHookMu sync.Mutex
+	statsHook   func()
 }
 
 func NewHub(z *zlm.Client, token string) *Hub {
@@ -23,6 +26,22 @@ func NewHub(z *zlm.Client, token string) *Hub {
 		rooms: make(map[string]*Room),
 		zlm:   z,
 		token: token,
+	}
+}
+
+// SetStatsChangeHook registers a callback invoked when dashboard-relevant stats change.
+func (h *Hub) SetStatsChangeHook(fn func()) {
+	h.statsHookMu.Lock()
+	h.statsHook = fn
+	h.statsHookMu.Unlock()
+}
+
+func (h *Hub) notifyStatsChanged() {
+	h.statsHookMu.Lock()
+	fn := h.statsHook
+	h.statsHookMu.Unlock()
+	if fn != nil {
+		fn()
 	}
 }
 
