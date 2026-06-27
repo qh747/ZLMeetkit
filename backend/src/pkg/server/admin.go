@@ -9,6 +9,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 
+	"zlm_meet/backend/pkg/adminauth"
 	"zlm_meet/backend/pkg/config"
 	"zlm_meet/backend/pkg/signaling"
 )
@@ -16,9 +17,9 @@ import (
 const adminTokenHeader = "X-Admin-Token"
 
 // NewAdmin builds the HTTPS admin handler (API + static admin UI).
-func NewAdmin(cfg *config.Config, hub *signaling.Hub) http.Handler {
+func NewAdmin(cfg *config.Config, hub *signaling.Hub, auth *adminauth.Auth) http.Handler {
 	mux := http.NewServeMux()
-	dashboardHub := newAdminDashboardHub(hub)
+	dashboardHub := newAdminDashboardHub(hub, auth)
 	originCheck := buildOriginChecker(cfg.AllowedOrigins)
 
 	mux.HandleFunc("/api/admin/login", func(w http.ResponseWriter, r *http.Request) {
@@ -27,24 +28,29 @@ func NewAdmin(cfg *config.Config, hub *signaling.Hub) http.Handler {
 			return
 		}
 		var req struct {
-			Token string `json:"token"`
+			Username string `json:"username"`
+			Password string `json:"password"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		if err := hub.ValidateToken(req.Token); err != nil {
+		token, err := auth.Login(strings.TrimSpace(req.Username), req.Password)
+		if err != nil {
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"ok":      false,
 				"message": err.Error(),
 			})
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok":    true,
+			"token": token,
+		})
 	})
 
-	mux.Handle("/api/admin/dashboard", requireAdmin(hub, func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("/api/admin/dashboard", requireAdmin(auth, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -146,10 +152,10 @@ func assetsHandler(adminStaticDir, sharedRoot string) http.Handler {
 	})
 }
 
-func requireAdmin(hub *signaling.Hub, next http.HandlerFunc) http.Handler {
+func requireAdmin(auth *adminauth.Auth, next http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := strings.TrimSpace(r.Header.Get(adminTokenHeader))
-		if err := hub.ValidateToken(token); err != nil {
+		if _, err := auth.ValidateToken(token); err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
 			_ = json.NewEncoder(w).Encode(map[string]any{

@@ -10,6 +10,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog/log"
 
+	"zlm_meet/backend/pkg/adminauth"
 	"zlm_meet/backend/pkg/signaling"
 )
 
@@ -23,6 +24,7 @@ const (
 
 type adminDashboardHub struct {
 	hub      *signaling.Hub
+	auth     *adminauth.Auth
 	mu       sync.Mutex
 	clients  map[*adminWSClient]struct{}
 	debounce *time.Timer
@@ -32,13 +34,16 @@ type adminWSClient struct {
 	parent *adminDashboardHub
 	conn   *websocket.Conn
 	send   chan []byte
+	token  string
 }
 
-func newAdminDashboardHub(hub *signaling.Hub) *adminDashboardHub {
+func newAdminDashboardHub(hub *signaling.Hub, auth *adminauth.Auth) *adminDashboardHub {
 	d := &adminDashboardHub{
 		hub:     hub,
+		auth:    auth,
 		clients: make(map[*adminWSClient]struct{}),
 	}
+	auth.SetKickHandler(d.kickByToken)
 	hub.SetStatsChangeHook(d.scheduleHubPush)
 	return d
 }
@@ -119,6 +124,21 @@ func (d *adminDashboardHub) broadcast(raw []byte) {
 	}
 }
 
+func (d *adminDashboardHub) kickByToken(token string) {
+	d.mu.Lock()
+	var victims []*adminWSClient
+	for c := range d.clients {
+		if c.token == token {
+			victims = append(victims, c)
+		}
+	}
+	d.mu.Unlock()
+
+	for _, c := range victims {
+		c.kick("账号已在其它地方登录")
+	}
+}
+
 func (d *adminDashboardHub) handleWS(w http.ResponseWriter, r *http.Request, checkOrigin func(*http.Request) bool) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -129,7 +149,7 @@ func (d *adminDashboardHub) handleWS(w http.ResponseWriter, r *http.Request, che
 	if token == "" {
 		token = strings.TrimSpace(r.Header.Get(adminTokenHeader))
 	}
-	if err := d.hub.ValidateToken(token); err != nil {
+	if _, err := d.auth.ValidateToken(token); err != nil {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -149,6 +169,7 @@ func (d *adminDashboardHub) handleWS(w http.ResponseWriter, r *http.Request, che
 		parent: d,
 		conn:   conn,
 		send:   make(chan []byte, adminWSOutboundQueue),
+		token:  token,
 	}
 	d.register(client)
 	go client.writeLoop()
@@ -236,6 +257,18 @@ func (c *adminWSClient) pushSnapshot(includeZLM bool) {
 	case c.send <- raw:
 	default:
 	}
+}
+
+func (c *adminWSClient) kick(message string) {
+	raw, err := json.Marshal(map[string]any{
+		"type":    "kick",
+		"message": message,
+	})
+	if err == nil {
+		_ = c.conn.SetWriteDeadline(time.Now().Add(adminWSWriteWait))
+		_ = c.conn.WriteMessage(websocket.TextMessage, raw)
+	}
+	_ = c.conn.Close()
 }
 
 func (c *adminWSClient) close() {

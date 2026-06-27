@@ -24,8 +24,12 @@
         <div class="shell-title-divider" aria-hidden="true"></div>
         <form id="loginForm" class="admin-login-form" autocomplete="off">
           <label class="admin-login-field-row">
-            <span class="admin-token-label">登录令牌</span>
-            <input id="loginToken" type="password" placeholder="输入登录令牌以继续" autocomplete="off" />
+            <span class="admin-token-label">管理员名称</span>
+            <input id="loginUsername" type="text" placeholder="输入管理员名称" autocomplete="username" />
+          </label>
+          <label class="admin-login-field-row">
+            <span class="admin-token-label">密码</span>
+            <input id="loginPassword" type="password" placeholder="输入密码" autocomplete="current-password" />
           </label>
           <button type="submit" id="loginSubmit" class="admin-primary">登录</button>
         </form>

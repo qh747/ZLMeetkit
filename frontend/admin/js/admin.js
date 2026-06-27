@@ -6,7 +6,8 @@
   const loginView = document.getElementById('loginView');
   const appView = document.getElementById('appView');
   const loginForm = document.getElementById('loginForm');
-  const loginToken = document.getElementById('loginToken');
+  const loginUsername = document.getElementById('loginUsername');
+  const loginPassword = document.getElementById('loginPassword');
   const loginSubmit = document.getElementById('loginSubmit');
   const logoutBtn = document.getElementById('logoutBtn');
   const refreshBtn = document.getElementById('refreshBtn');
@@ -144,6 +145,18 @@
     );
   }
 
+  function handleSessionExpired(message, title) {
+    setToken('');
+    endSession();
+    showLogin();
+    showLoginAlert(message || '登录已失效，请重新登录', title || '登录已失效');
+  }
+
+  function handleKick(data) {
+    wsManualClose = true;
+    handleSessionExpired(data.message || '账号已在其它地方登录', '已下线');
+  }
+
   function getToken() {
     return sessionStorage.getItem(TOKEN_KEY) || '';
   }
@@ -272,6 +285,10 @@
         console.error(e);
         return;
       }
+      if (data.type === 'kick') {
+        handleKick(data);
+        return;
+      }
       if (data.type === 'dashboard') {
         applyDashboard(data);
       }
@@ -300,11 +317,11 @@
     renderRoomCards(hub);
   }
 
-  async function apiLogin(token) {
+  async function apiLogin(username, password) {
     const res = await fetch('/api/admin/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token }),
+      body: JSON.stringify({ username: username, password: password }),
     });
     return res.json();
   }
@@ -350,10 +367,7 @@
     try {
       const data = await apiDashboard(token);
       if (data.unauthorized) {
-        setToken('');
-        endSession();
-        showLogin();
-        showLoginAlert('登录已过期，请重新输入令牌', '登录已过期');
+        handleSessionExpired('登录已失效，请重新登录');
         return null;
       }
       applyDashboard(data);
@@ -398,9 +412,14 @@
 
   loginForm.addEventListener('submit', async function (e) {
     e.preventDefault();
-    const token = loginToken.value.trim();
-    if (!token) {
-      showLoginAlert('请输入登录令牌');
+    const username = loginUsername.value.trim();
+    const password = loginPassword.value;
+    if (!username) {
+      showLoginAlert('请输入管理员名称');
+      return;
+    }
+    if (!password) {
+      showLoginAlert('请输入密码');
       return;
     }
 
@@ -408,14 +427,14 @@
     loginSubmit.textContent = '登录中…';
 
     try {
-      const res = await apiLogin(token);
+      const res = await apiLogin(username, password);
       if (!res.ok) {
-        showLoginAlert(res.message || '登录失败，请检查令牌是否正确');
+        showLoginAlert(res.message || '登录失败，请检查管理员名称和密码');
         return;
       }
 
-      setToken(token);
-      loginToken.value = '';
+      setToken(res.token);
+      loginPassword.value = '';
       sessionStorage.setItem(LOGIN_AT_KEY, String(Date.now()));
       showApp();
     } catch (err) {
@@ -430,7 +449,7 @@
   logoutBtn.addEventListener('click', function () {
     setToken('');
     endSession();
-    loginToken.value = '';
+    loginPassword.value = '';
     showLogin();
   });
 

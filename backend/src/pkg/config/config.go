@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -26,9 +27,10 @@ type Config struct {
 	// Token is required on business requests when non-empty (entry-check + join).
 	Token          string    `yaml:"token"`
 	// Admin HTTPS listener and static admin UI (separate from business port).
-	// Uses the same tls_cert / tls_key and token as the business server.
 	AdminListen    string    `yaml:"admin_listen"`
 	AdminStaticDir string    `yaml:"admin_static_dir"`
+	// Admin accounts: "name1:pass1;name2:pass2"
+	AdminAccounts  string    `yaml:"admin_accounts"`
 	ZLM            ZLMConfig `yaml:"zlm"`
 }
 
@@ -42,11 +44,35 @@ func Load(path string) (*Config, error) {
 	if err := yaml.Unmarshal(data, c); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
-	if c.Listen == "" {
-		c.Listen = ":8080"
+	if err := c.validate(); err != nil {
+		return nil, err
 	}
 	if c.ZLM.APIBase == "" {
 		c.ZLM.APIBase = "http://127.0.0.1:80"
 	}
 	return c, nil
+}
+
+func (c *Config) validate() error {
+	c.Listen = strings.TrimSpace(c.Listen)
+	c.AdminListen = strings.TrimSpace(c.AdminListen)
+	c.TLSCert = strings.TrimSpace(c.TLSCert)
+	c.TLSKey = strings.TrimSpace(c.TLSKey)
+
+	if c.Listen == "" {
+		return fmt.Errorf("listen is required")
+	}
+	if c.AdminListen == "" {
+		return fmt.Errorf("admin_listen is required")
+	}
+	if c.Listen == c.AdminListen {
+		return fmt.Errorf("listen and admin_listen must be different")
+	}
+	if c.TLSCert == "" {
+		return fmt.Errorf("tls_cert is required (HTTPS only)")
+	}
+	if c.TLSKey == "" {
+		return fmt.Errorf("tls_key is required (HTTPS only)")
+	}
+	return nil
 }
