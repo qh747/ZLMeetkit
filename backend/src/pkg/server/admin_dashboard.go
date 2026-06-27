@@ -25,6 +25,7 @@ const (
 type adminDashboardHub struct {
 	hub      *signaling.Hub
 	auth     *adminauth.Auth
+	observe  *observeSessionManager
 	mu       sync.Mutex
 	clients  map[*adminWSClient]struct{}
 	debounce *time.Timer
@@ -37,10 +38,11 @@ type adminWSClient struct {
 	token  string
 }
 
-func newAdminDashboardHub(hub *signaling.Hub, auth *adminauth.Auth) *adminDashboardHub {
+func newAdminDashboardHub(hub *signaling.Hub, auth *adminauth.Auth, observe *observeSessionManager) *adminDashboardHub {
 	d := &adminDashboardHub{
 		hub:     hub,
 		auth:    auth,
+		observe: observe,
 		clients: make(map[*adminWSClient]struct{}),
 	}
 	auth.SetKickHandler(d.kickByToken)
@@ -125,6 +127,9 @@ func (d *adminDashboardHub) broadcast(raw []byte) {
 }
 
 func (d *adminDashboardHub) kickByToken(token string) {
+	if d.observe != nil {
+		d.observe.leaveAllByToken(token, "账号已在其它地方登录")
+	}
 	d.mu.Lock()
 	var victims []*adminWSClient
 	for c := range d.clients {

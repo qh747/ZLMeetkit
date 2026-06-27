@@ -33,6 +33,7 @@ type JoinPayload struct {
 	Nickname string `json:"nickname"`
 	Mode     string `json:"mode,omitempty"`     // meeting | call | solo (default meeting)
 	SoloRole string `json:"soloRole,omitempty"` // push | play when mode=solo
+	StreamID string `json:"streamId,omitempty"` // intended/published stream in solo push
 	Token    string `json:"token,omitempty"`
 	MicOn    *bool  `json:"micOn,omitempty"`
 	CamOn    *bool  `json:"camOn,omitempty"`
@@ -177,6 +178,8 @@ const (
 	TypeStreamStopped = "stream-stopped"
 	TypeRecordStart   = "record-start"
 	TypeRecordStop    = "record-stop"
+	TypeObserveJoin   = "observe-join"
+	TypeObserveLeave  = "observe-leave"
 
 	// server → client
 	TypeJoined            = "joined"
@@ -187,5 +190,19 @@ const (
 	TypePeerStreamStarted = "peer-stream-started"
 	TypePeerStreamStopped = "peer-stream-stopped"
 	TypeRecordState       = "record-state"
+	TypeObserveJoined     = "observe-joined"
+	TypeObserveEnded      = "observe-ended"
+	TypeObserveError      = "observe-error"
 	TypeError             = "error"
 )
+
+// ObserveJoinPayload is sent by admin clients to enter a room as a silent observer.
+type ObserveJoinPayload struct {
+	Room string `json:"room"`
+	Mode string `json:"mode"` // meeting | call | solo
+}
+
+// ObserveEndedPayload is sent when the watched business ends.
+type ObserveEndedPayload struct {
+	Message string `json:"message,omitempty"`
+}

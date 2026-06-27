@@ -68,6 +68,10 @@
           <span class="admin-nav-dot" aria-hidden="true"></span>
           <span class="admin-nav-label">监控面板</span>
         </button>
+        <button type="button" class="admin-nav-item" data-page="monitor" id="monitorTab">
+          <span class="admin-nav-dot" aria-hidden="true"></span>
+          <span class="admin-nav-label">房间监控</span>
+        </button>
       </nav>
       <div class="admin-sidebar-footer">
         <div id="sessionDuration" class="admin-sidebar-session-time" aria-live="polite" aria-label="已登录时长"></div>
@@ -78,9 +82,104 @@
       <section id="dashboardPage" class="admin-page active">
         <div class="admin-room-cards" id="roomCards"></div>
       </section>
+
+      <section id="monitorPage" class="admin-page" aria-hidden="true">
+        <div class="admin-monitor-tabs" role="tablist" aria-label="业务监控视图">
+          <button type="button" class="admin-monitor-tab active" data-monitor-tab="rooms" role="tab" aria-selected="true">
+            <span class="admin-monitor-tab-label">房间列表</span>
+          </button>
+          <button type="button" class="admin-monitor-tab" data-monitor-tab="live" role="tab" aria-selected="false">
+            <span class="admin-monitor-tab-label">实时画面</span>
+            <span class="admin-monitor-tab-badge" id="liveCount">0/9</span>
+          </button>
+        </div>
+
+        <div id="monitorRoomsPanel" class="admin-monitor-panel active" role="tabpanel">
+          <div class="admin-monitor-filter">
+            <div class="admin-monitor-filter-fields">
+              <label class="admin-monitor-field">
+                <span class="admin-monitor-field-label">业务类型</span>
+                <select id="monitorTypeFilter" aria-label="业务类型">
+                  <option value="">全部</option>
+                  <option value="meeting">视频会议</option>
+                  <option value="call">1v1 通话</option>
+                  <option value="push">推流</option>
+                </select>
+              </label>
+              <label class="admin-monitor-field admin-monitor-field--room">
+                <span class="admin-monitor-field-label">房间名称</span>
+                <input id="monitorSearch" type="text" placeholder="输入房间名称" autocomplete="off" />
+              </label>
+              <button type="button" id="monitorSearchBtn" class="admin-monitor-search-btn">搜索</button>
+            </div>
+          </div>
+          <div class="admin-monitor-list-section">
+            <div class="admin-monitor-table-wrap">
+              <table class="admin-monitor-table">
+                <thead>
+                  <tr>
+                    <th>业务类型</th>
+                    <th>房间名</th>
+                    <th>在线人数</th>
+                    <th>录制</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="monitorTableBody"></tbody>
+              </table>
+              <p id="monitorEmpty" class="admin-monitor-empty" hidden>暂无运行中的业务</p>
+            </div>
+            <nav id="monitorPagination" class="admin-monitor-pagination" aria-label="房间列表分页" hidden>
+              <span class="admin-monitor-page-info" id="monitorPageInfo"></span>
+              <div class="admin-monitor-page-actions">
+                <button type="button" id="monitorPagePrev" class="admin-monitor-page-btn">上一页</button>
+                <button type="button" id="monitorPageNext" class="admin-monitor-page-btn">下一页</button>
+                <label class="admin-monitor-page-jump">
+                  <span>第</span>
+                  <input id="monitorPageInput" type="number" min="1" value="1" inputmode="numeric" aria-label="页码" />
+                  <span>页</span>
+                </label>
+                <button type="button" id="monitorPageGo" class="admin-monitor-page-btn admin-monitor-page-btn--go">跳转</button>
+                <label class="admin-monitor-page-size">
+                  <span>每页</span>
+                  <select id="monitorPageSize" aria-label="每页条数">
+                    <option value="5">5</option>
+                    <option value="10" selected>10</option>
+                    <option value="20">20</option>
+                  </select>
+                  <span>条</span>
+                </label>
+              </div>
+            </nav>
+          </div>
+        </div>
+      </section>
+
+      <div id="monitorLivePanel" class="admin-monitor-live-section" role="tabpanel" hidden aria-hidden="true">
+        <div class="admin-watch-stage">
+          <div class="admin-watch-grid" id="watchGrid"></div>
+        </div>
+      </div>
     </main>
+
+    <dialog id="memberPickDialog" class="admin-member-dialog">
+      <div class="admin-member-dialog-inner">
+        <header class="admin-member-dialog-head">
+          <h2 class="admin-member-dialog-title">选择观看成员</h2>
+          <div class="shell-title-divider admin-member-dialog-divider" aria-hidden="true"></div>
+          <p class="admin-member-dialog-room" id="memberPickRoom"></p>
+        </header>
+        <div class="admin-member-dialog-body">
+          <ul id="memberPickList" class="admin-member-pick-list"></ul>
+        </div>
+        <footer class="admin-member-dialog-actions">
+          <button type="button" class="admin-secondary" id="memberPickCancel">取消</button>
+        </footer>
+      </div>
+    </dialog>
   </div>
 
   <script src="js/admin.js"></script>
+  <script type="module" src="js/admin-monitor.js"></script>
 </body>
 </html>

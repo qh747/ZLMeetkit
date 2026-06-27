@@ -20,6 +20,7 @@ import {
   syncQualityButtonLabel,
 } from './quality.js';
 import { showAppAlert, isTokenError, showTokenErrorAlert, showRecordHookErrorAlert } from './ui-alert.js';
+import { handleServiceDisconnect } from './network-error.js';
 
 // Resolve mode: meeting.html uses 'meeting'; call.html uses 'call'.
 const urlParams = new URLSearchParams(location.search);
@@ -159,9 +160,12 @@ window.addEventListener('beforeunload', () => leave({ navigate: false }));
 // Wire toolbar immediately so Leave / toggles work even if camera or signaling fails.
 wireToolbar();
 
-main().catch((err) => {
+main().catch(async (err) => {
   console.error(err);
-  ui.showStatus('启动失败：' + err.message, { error: true, durationMs: 0 });
+  await handleServiceDisconnect({
+    biz: IS_CALL ? 'call' : 'meeting',
+    signaling: state.signaling,
+  });
 });
 
 async function main() {
@@ -204,8 +208,11 @@ async function main() {
   try {
     await state.signaling.connect();
   } catch (err) {
-    ui.showStatus('信令连接失败：' + err.message, { error: true, durationMs: 0 });
-    throw err;
+    await handleServiceDisconnect({
+      biz: IS_CALL ? 'call' : 'meeting',
+      signaling: state.signaling,
+    });
+    return;
   }
   state.signaling.send('join', {
     room: state.room,
@@ -371,7 +378,10 @@ function wireSignalHandlers(sig) {
   });
 
   sig.on('_close', () => {
-    ui.showStatus('信令已断开', { error: true, durationMs: 0 });
+    void handleServiceDisconnect({
+      biz: IS_CALL ? 'call' : 'meeting',
+      signaling: state.signaling,
+    });
   });
 }
 

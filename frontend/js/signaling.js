@@ -120,4 +120,9 @@ export class Signaling {
       try { this.ws.close(1000, 'bye'); } catch (_) {}
     }
   }
+
+  /** True when close() was called locally (leave / intentional shutdown). */
+  isClosedByUser() {
+    return this._closedByUser;
+  }
 }

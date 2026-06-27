@@ -35,13 +35,13 @@ func TestCheckEntry_duplicateNickname(t *testing.T) {
 func TestCheckEntry_streamIDInUse(t *testing.T) {
 	h := signaling.NewHub(nil, "")
 	c := signaling.NewTestClient("u1", "publisher", map[string]string{"solo": "demo_001"})
-	if err := h.AddTestClient("live", signaling.RoomModeSolo, c); err != nil {
+	if err := h.AddTestSoloClient("live", signaling.SoloRolePush, c); err != nil {
 		t.Fatal(err)
 	}
 
 	err := h.CheckEntry("push", "live", "", "demo_001", "")
-	if err == nil || err.Error() != signaling.ErrStreamIDInUse {
-		t.Fatalf("want %q, got %v", signaling.ErrStreamIDInUse, err)
+	if err == nil || err.Error() != signaling.ErrRoomInUse {
+		t.Fatalf("want %q, got %v", signaling.ErrRoomInUse, err)
 	}
 }
 
@@ -54,7 +54,7 @@ func TestCheckEntry_streamNotFound(t *testing.T) {
 	}
 
 	c := signaling.NewTestClient("u1", "publisher", map[string]string{"solo": "demo_001"})
-	if err := h.AddTestClient("live", signaling.RoomModeSolo, c); err != nil {
+	if err := h.AddTestSoloClient("live", signaling.SoloRolePush, c); err != nil {
 		t.Fatal(err)
 	}
 
@@ -79,7 +79,7 @@ func TestCheckEntry_joinMeetingOK(t *testing.T) {
 func TestCheckEntry_playOK(t *testing.T) {
 	h := signaling.NewHub(nil, "")
 	c := signaling.NewTestClient("u1", "publisher", map[string]string{"solo": "demo_001"})
-	if err := h.AddTestClient("live", signaling.RoomModeSolo, c); err != nil {
+	if err := h.AddTestSoloClient("live", signaling.SoloRolePush, c); err != nil {
 		t.Fatal(err)
 	}
 
@@ -91,7 +91,7 @@ func TestCheckEntry_playOK(t *testing.T) {
 func TestCheckEntry_playNicknameRequired(t *testing.T) {
 	h := signaling.NewHub(nil, "")
 	c := signaling.NewTestClient("u1", "publisher", map[string]string{"solo": "demo_001"})
-	if err := h.AddTestClient("live", signaling.RoomModeSolo, c); err != nil {
+	if err := h.AddTestSoloClient("live", signaling.SoloRolePush, c); err != nil {
 		t.Fatal(err)
 	}
 
@@ -104,17 +104,30 @@ func TestCheckEntry_playNicknameRequired(t *testing.T) {
 func TestCheckEntry_playDuplicateMemberName(t *testing.T) {
 	h := signaling.NewHub(nil, "")
 	pub := signaling.NewTestClient("u1", "publisher", map[string]string{"solo": "demo_001"})
-	if err := h.AddTestClient("live", signaling.RoomModeSolo, pub); err != nil {
+	if err := h.AddTestSoloClient("live", signaling.SoloRolePush, pub); err != nil {
 		t.Fatal(err)
 	}
 	player := signaling.NewTestClient("u2", "Bob", nil)
-	if err := h.AddTestClient("live", signaling.RoomModeSolo, player); err != nil {
+	if err := h.AddTestSoloClient("live", signaling.SoloRolePlay, player); err != nil {
 		t.Fatal(err)
 	}
 
 	err := h.CheckEntry("play", "live", "Bob", "demo_001", "")
 	if err == nil || err.Error() != signaling.ErrMemberNameInUse {
 		t.Fatalf("want %q, got %v", signaling.ErrMemberNameInUse, err)
+	}
+}
+
+func TestCheckEntry_pushRoomOccupiedBeforeStream(t *testing.T) {
+	h := signaling.NewHub(nil, "")
+	pub := signaling.NewTestClient("u1", "publisher", nil)
+	if err := h.AddTestSoloClient("live", signaling.SoloRolePush, pub); err != nil {
+		t.Fatal(err)
+	}
+
+	err := h.CheckEntry("push", "live", "", "demo_002", "")
+	if err == nil || err.Error() != signaling.ErrRoomInUse {
+		t.Fatalf("want %q, got %v", signaling.ErrRoomInUse, err)
 	}
 }
 

@@ -53,6 +53,9 @@ func (h *Hub) CheckEntry(biz, room, nickname, streamID, token string) error {
 			if r.Mode != mode {
 				return errors.New(ErrRoomInUse)
 			}
+			if biz == "push" && r.hasPushMember() {
+				return errors.New(ErrRoomInUse)
+			}
 			if nickname != "" && r.hasNickname(nickname) {
 				return errors.New(ErrUserInUse)
 			}

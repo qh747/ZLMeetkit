@@ -19,7 +19,9 @@ const adminTokenHeader = "X-Admin-Token"
 // NewAdmin builds the HTTPS admin handler (API + static admin UI).
 func NewAdmin(cfg *config.Config, hub *signaling.Hub, auth *adminauth.Auth) http.Handler {
 	mux := http.NewServeMux()
-	dashboardHub := newAdminDashboardHub(hub, auth)
+	audit := NewAuditLog(200)
+	observeMgr := newObserveSessionManager(hub, auth, audit)
+	dashboardHub := newAdminDashboardHub(hub, auth, observeMgr)
 	originCheck := buildOriginChecker(cfg.AllowedOrigins)
 
 	mux.HandleFunc("/api/admin/login", func(w http.ResponseWriter, r *http.Request) {
@@ -63,6 +65,43 @@ func NewAdmin(cfg *config.Config, hub *signaling.Hub, auth *adminauth.Auth) http
 		dashboardHub.handleWS(w, r, originCheck)
 	})
 
+	mux.HandleFunc("/api/admin/logout", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		token := strings.TrimSpace(r.Header.Get(adminTokenHeader))
+		username, err := auth.ValidateToken(token)
+		w.Header().Set("Content-Type", "application/json")
+		if err != nil {
+			w.WriteHeader(http.StatusUnauthorized)
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "message": err.Error()})
+			return
+		}
+		observeMgr.leaveAllByToken(token, "logout")
+		if err := auth.Logout(token); err != nil {
+			w.WriteHeader(http.StatusUnauthorized)
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "message": err.Error()})
+			return
+		}
+		audit.Record(username, "logout", "", "")
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+	})
+
+	mux.Handle("/api/admin/audit-log", requireAdmin(auth, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		limit := 50
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"entries": audit.Recent(limit)})
+	}))
+
+	mux.HandleFunc("/api/admin/observe/ws", func(w http.ResponseWriter, r *http.Request) {
+		observeMgr.handleWS(w, r, originCheck)
+	})
+
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("ok"))
 	})
@@ -75,6 +114,7 @@ func NewAdmin(cfg *config.Config, hub *signaling.Hub, auth *adminauth.Auth) http
 	}
 	if sharedRoot != "" {
 		mux.Handle("/css/", cssHandler(cfg.AdminStaticDir, sharedRoot))
+		mux.Handle("/js/", jsHandler(cfg.AdminStaticDir, sharedRoot))
 		mux.Handle("/assets/", assetsHandler(cfg.AdminStaticDir, sharedRoot))
 	} else if cfg.AdminStaticDir != "" {
 		mux.Handle("/assets/", assetsHandler(cfg.AdminStaticDir, ""))
@@ -84,7 +124,7 @@ func NewAdmin(cfg *config.Config, hub *signaling.Hub, auth *adminauth.Auth) http
 		adminFS := http.FileServer(http.Dir(cfg.AdminStaticDir))
 		mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			p := r.URL.Path
-			if strings.HasPrefix(p, "/assets/") || strings.HasPrefix(p, "/css/") || strings.HasPrefix(p, "/api/") {
+			if strings.HasPrefix(p, "/assets/") || strings.HasPrefix(p, "/css/") || strings.HasPrefix(p, "/js/") || strings.HasPrefix(p, "/api/") {
 				http.NotFound(w, r)
 				return
 			}
@@ -112,6 +152,29 @@ func cssHandler(adminStaticDir, sharedRoot string) http.Handler {
 			}
 		}
 		sharedPath := filepath.Join(sharedRoot, "css", name)
+		if info, err := os.Stat(sharedPath); err == nil && !info.IsDir() {
+			http.ServeFile(w, r, sharedPath)
+			return
+		}
+		http.NotFound(w, r)
+	})
+}
+
+func jsHandler(adminStaticDir, sharedRoot string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		name := strings.TrimPrefix(r.URL.Path, "/js/")
+		if name == "" || strings.Contains(name, "..") {
+			http.NotFound(w, r)
+			return
+		}
+		if adminStaticDir != "" {
+			adminPath := filepath.Join(adminStaticDir, "js", name)
+			if info, err := os.Stat(adminPath); err == nil && !info.IsDir() {
+				http.ServeFile(w, r, adminPath)
+				return
+			}
+		}
+		sharedPath := filepath.Join(sharedRoot, "js", name)
 		if info, err := os.Stat(sharedPath); err == nil && !info.IsDir() {
 			http.ServeFile(w, r, sharedPath)
 			return

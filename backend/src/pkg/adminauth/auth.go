@@ -85,3 +85,20 @@ func (a *Auth) ValidateToken(token string) (string, error) {
 	}
 	return username, nil
 }
+
+// Logout invalidates an admin session token.
+func (a *Auth) Logout(token string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if len(a.accounts) == 0 {
+		return errors.New(ErrNotConfigured)
+	}
+	username, ok := a.sessions[token]
+	if !ok {
+		return errors.New(ErrInvalidSession)
+	}
+	delete(a.sessions, token)
+	delete(a.byUser, username)
+	return nil
+}

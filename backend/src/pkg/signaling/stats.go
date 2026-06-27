@@ -4,31 +4,36 @@ import "time"
 
 // ClientBrief is a lightweight view of a connected client for admin dashboards.
 type ClientBrief struct {
-	UserID    string       `json:"userId"`
-	Nickname  string       `json:"nickname"`
-	SoloRole  string       `json:"soloRole,omitempty"` // push | play in solo rooms
-	MicOn     bool         `json:"micOn"`
-	CamOn     bool         `json:"camOn"`
-	Streams   []StreamInfo `json:"streams"`
-	Recording bool         `json:"recording"`
+	UserID          string       `json:"userId"`
+	Nickname        string       `json:"nickname"`
+	SoloRole        string       `json:"soloRole,omitempty"` // push | play in solo rooms
+	PlannedStreamID string       `json:"plannedStreamId,omitempty"`
+	MicOn           bool         `json:"micOn"`
+	CamOn           bool         `json:"camOn"`
+	Streams         []StreamInfo `json:"streams"`
+	Recording       bool         `json:"recording"`
+	IsObserver      bool         `json:"isObserver,omitempty"`
 }
 
 // RoomStats summarizes one active room.
 type RoomStats struct {
-	ID      string        `json:"id"`
-	Mode    string        `json:"mode"`
-	Members int           `json:"members"`
-	Clients []ClientBrief `json:"clients"`
+	ID          string        `json:"id"`
+	Mode        string        `json:"mode"`
+	Members     int           `json:"members"`
+	RealMembers int           `json:"realMembers"`
+	Observers   int           `json:"observers"`
+	Clients     []ClientBrief `json:"clients"`
 }
 
 // HubStats is a point-in-time snapshot of signaling state.
 type HubStats struct {
-	TotalRooms    int            `json:"totalRooms"`
-	TotalClients  int            `json:"totalClients"`
-	RoomsByMode   map[string]int `json:"roomsByMode"`
-	ClientsByMode map[string]int `json:"clientsByMode"`
-	Rooms         []RoomStats    `json:"rooms"`
-	ServerTime    int64          `json:"serverTime"`
+	TotalRooms     int            `json:"totalRooms"`
+	TotalClients   int            `json:"totalClients"`
+	TotalObservers int            `json:"totalObservers"`
+	RoomsByMode    map[string]int `json:"roomsByMode"`
+	ClientsByMode  map[string]int `json:"clientsByMode"`
+	Rooms          []RoomStats    `json:"rooms"`
+	ServerTime     int64          `json:"serverTime"`
 }
 
 // StatsSnapshot returns current hub statistics for the admin dashboard.
@@ -57,11 +62,10 @@ func (h *Hub) StatsSnapshot() HubStats {
 
 		r.mu.RLock()
 		rs.Members = len(r.clients)
-		out.TotalClients += rs.Members
-		out.ClientsByMode[r.Mode] += rs.Members
 
 		for _, c := range r.clients {
 			c.mu.RLock()
+			isObs := c.isObserver
 			recording := false
 			for _, on := range c.recordings {
 				if on {
@@ -70,18 +74,29 @@ func (h *Hub) StatsSnapshot() HubStats {
 				}
 			}
 			brief := ClientBrief{
-				UserID:    c.UserID,
-				Nickname:  c.Nickname,
-				SoloRole:  c.soloRole,
-				MicOn:     c.micOn,
-				CamOn:     c.camOn,
-				Recording: recording,
-				Streams:   make([]StreamInfo, 0, len(c.streams)),
+				UserID:          c.UserID,
+				Nickname:        c.Nickname,
+				SoloRole:        c.soloRole,
+				PlannedStreamID: c.plannedStreamID,
+				MicOn:           c.micOn,
+				CamOn:           c.camOn,
+				Recording:       recording,
+				IsObserver:      isObs,
+				Streams:         make([]StreamInfo, 0, len(c.streams)),
 			}
 			for kind, sid := range c.streams {
 				brief.Streams = append(brief.Streams, StreamInfo{Kind: kind, StreamID: sid})
 			}
 			c.mu.RUnlock()
+
+			if isObs {
+				rs.Observers++
+				out.TotalObservers++
+			} else {
+				rs.RealMembers++
+				out.TotalClients++
+				out.ClientsByMode[r.Mode]++
+			}
 			rs.Clients = append(rs.Clients, brief)
 		}
 		r.mu.RUnlock()

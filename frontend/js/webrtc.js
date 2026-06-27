@@ -66,6 +66,23 @@ export async function publishStream({ signaling, stream, kind, streamId, solo, o
   return { pc, streamId: reply.streamId };
 }
 
+/** Attach a remote MediaStream to a video element and start playback. */
+export function attachMediaStreamToVideo(video, stream) {
+  if (!video) return;
+  video.srcObject = stream;
+  if (!stream) return;
+
+  const play = () => { video.play().catch(() => {}); };
+  play();
+
+  if (!stream._attachHooked) {
+    stream._attachHooked = true;
+    stream.addEventListener('addtrack', (ev) => {
+      if (ev.track?.kind === 'video') play();
+    });
+  }
+}
+
 /**
  * Pull a remote stream from ZLM via the signaling server.
  *

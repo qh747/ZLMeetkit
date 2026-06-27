@@ -93,5 +93,19 @@ func (h *Hub) GetRoom(id string) (*Room, bool) {
 	return r, ok
 }
 
+// AddObserverClient joins an existing room as a silent admin observer.
+func (h *Hub) AddObserverClient(roomID string, c *Client) error {
+	r, ok := h.GetRoom(roomID)
+	if !ok {
+		return errors.New("room not found")
+	}
+	c.hub = h
+	if err := r.addObserverClient(c); err != nil {
+		return err
+	}
+	c.room = r
+	return nil
+}
+
 // ZLM returns the ZLMediaKit client used by this hub.
 func (h *Hub) ZLM() *zlm.Client { return h.zlm }

@@ -5,6 +5,7 @@ import { playStream, closePC } from './webrtc.js';
 import { initSoloLayout } from './solo-layout.js';
 import { wireSoloChat } from './solo-chat.js';
 import { showAppAlert, isTokenError, showTokenErrorAlert } from './ui-alert.js';
+import { handleServiceDisconnect } from './network-error.js';
 
 const room = sessionStorage.getItem('zlm.room') || '';
 const streamId = sessionStorage.getItem('zlm.streamId') || '';
@@ -155,9 +156,9 @@ initSoloLayout();
 btnStart.addEventListener('click', toggleStream);
 document.getElementById('btnLeave').addEventListener('click', () => leave({ navigate: true }));
 
-main().catch((err) => {
+main().catch(async (err) => {
   console.error(err);
-  setStatus('启动失败：' + err.message, true, 0);
+  await handleServiceDisconnect({ biz: 'play', signaling: state.signaling });
 });
 
 async function main() {
@@ -166,7 +167,9 @@ async function main() {
   state.signaling = new Signaling(`${scheme}//${host}/ws`);
   // Request-scoped errors (webrtc-offer, record-*) carry reqId and reject the
   // pending promise; ignore fire-and-forget error broadcasts during pull setup.
-  state.signaling.on('_close', () => setStatus('信令已断开', true, 0));
+  state.signaling.on('_close', () => {
+    void handleServiceDisconnect({ biz: 'play', signaling: state.signaling });
+  });
   state.signaling.on('error', async (p) => {
     if (isTokenError(p.message)) {
       await showTokenErrorAlert();
@@ -195,7 +198,12 @@ async function main() {
     await showAppAlert('推流方已离开', { title: '推流已停止' });
     setReadyUI();
   });
-  await state.signaling.connect();
+  try {
+    await state.signaling.connect();
+  } catch (err) {
+    await handleServiceDisconnect({ biz: 'play', signaling: state.signaling });
+    return;
+  }
   wireSoloChat(state.signaling, () => state.myUserId, {
     canOpenChat: () => !!state.pull,
     chatBlockedMessage: '请先开始拉流后再使用聊天',

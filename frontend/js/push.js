@@ -14,6 +14,7 @@ import {
   syncQualityButtonLabel,
 } from './quality.js';
 import { showAppAlert, isTokenError, showTokenErrorAlert, showRecordHookErrorAlert } from './ui-alert.js';
+import { handleServiceDisconnect } from './network-error.js';
 
 import { initSoloLayout } from './solo-layout.js';
 import { wireSoloChat } from './solo-chat.js';
@@ -148,9 +149,9 @@ wireToolbar();
 setBtn('btnMic', state.micOn ? '' : 'off');
 setBtn('btnCam', state.camOn ? '' : 'off');
 
-main().catch((err) => {
+main().catch(async (err) => {
   console.error(err);
-  setStatus('启动失败：' + err.message, true, 0);
+  await handleServiceDisconnect({ biz: 'push', signaling: state.signaling });
 });
 
 async function main() {
@@ -192,9 +193,16 @@ async function main() {
     }
     setStatus('服务器：' + p.message, true);
   });
-  state.signaling.on('_close', () => setStatus('信令已断开', true, 0));
+  state.signaling.on('_close', () => {
+    void handleServiceDisconnect({ biz: 'push', signaling: state.signaling });
+  });
   state.signaling.on('joined', (p) => { state.myUserId = p.userId; });
-  await state.signaling.connect();
+  try {
+    await state.signaling.connect();
+  } catch (err) {
+    await handleServiceDisconnect({ biz: 'push', signaling: state.signaling });
+    return;
+  }
   wireSoloChat(state.signaling, () => state.myUserId, {
     canOpenChat: () => !!state.pub,
     chatBlockedMessage: '请先开始推流后再使用聊天',
@@ -207,6 +215,7 @@ async function main() {
     nickname: 'publisher',
     mode: 'solo',
     soloRole: 'push',
+    streamId,
     token,
   });
   state.joined = true;

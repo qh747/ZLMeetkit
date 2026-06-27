@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -26,19 +27,24 @@ const (
 type Client struct {
 	UserID   string
 	Nickname string
-	soloRole string // SoloRolePush | SoloRolePlay when in a solo room
+	soloRole         string // SoloRolePush | SoloRolePlay when in a solo room
+	plannedStreamID  string // intended stream name for solo push before publish
 
 	hub  *Hub
 	room *Room
 
 	conn   *websocket.Conn
 	sendCh chan []byte
+	deliver func(msgType, reqID string, payload any) // admin observe WS bridge
 
 	mu         sync.RWMutex
 	micOn      bool
 	camOn      bool
 	streams    map[string]string // kind -> streamId currently published
 	recordings map[string]bool   // kind -> recording on/off
+	isObserver bool
+	adminToken string
+	adminUser  string
 	closed     bool
 }
 
@@ -52,6 +58,26 @@ func newClient(conn *websocket.Conn, hub *Hub) *Client {
 		recordings: make(map[string]bool),
 		micOn:      true,
 		camOn:      true,
+	}
+}
+
+// NewObserveClient builds a client backed by a custom deliver callback (admin observe WS).
+func NewObserveClient(hub *Hub, deliver func(msgType, reqID string, payload any)) *Client {
+	return &Client{
+		UserID:     uuid.NewString(),
+		hub:        hub,
+		deliver:    deliver,
+		streams:    make(map[string]string),
+		recordings: make(map[string]bool),
+	}
+}
+
+// LeaveRoom removes this client from its room without closing a WebSocket.
+func (c *Client) LeaveRoom() {
+	if c.room != nil {
+		r := c.room
+		c.room = nil
+		r.removeClient(c)
 	}
 }
 
@@ -152,6 +178,10 @@ func (c *Client) send(msgType, reqID string, payload any) {
 		log.Warn().Err(err).Str("user_id", c.UserID).Msg("marshal envelope")
 		return
 	}
+	if c.deliver != nil {
+		c.deliver(msgType, reqID, payload)
+		return
+	}
 	c.mu.RLock()
 	closed := c.closed
 	c.mu.RUnlock()
@@ -215,6 +245,39 @@ func (c *Client) requireRoom() error {
 	return nil
 }
 
+// IsObserver reports whether this client joined as an admin silent observer.
+func (c *Client) IsObserver() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.isObserver
+}
+
+// SetObserver marks the client as an admin observer for session tracking.
+func (c *Client) SetObserver(adminToken, adminUser string) {
+	c.mu.Lock()
+	c.isObserver = true
+	c.adminToken = adminToken
+	c.adminUser = adminUser
+	suffix := c.UserID
+	if len(suffix) > 8 {
+		suffix = suffix[:8]
+	}
+	c.Nickname = "observer-" + suffix
+	c.mu.Unlock()
+}
+
+// AdminToken returns the admin session token when this is an observer client.
+func (c *Client) AdminToken() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.adminToken
+}
+
+// Dispatch routes an envelope (used by admin observe WebSocket).
+func (c *Client) Dispatch(env *Envelope) error {
+	return c.dispatch(env)
+}
+
 func decodePayload[T any](env *Envelope, dst *T) error {
 	if len(env.Payload) == 0 {
 		return nil
@@ -259,6 +322,16 @@ func (c *Client) handleJoin(env *Envelope) error {
 		default:
 			return fmt.Errorf("invalid soloRole: %q", p.SoloRole)
 		}
+		if c.soloRole == SoloRolePush {
+			streamID := strings.TrimSpace(p.StreamID)
+			if streamID == "" {
+				return errors.New("streamId is required")
+			}
+			if !isSafeStreamName(streamID) {
+				return errors.New("streamId contains unsupported characters")
+			}
+			c.plannedStreamID = streamID
+		}
 	}
 	c.Nickname = p.Nickname
 	if p.MicOn != nil {
@@ -282,6 +355,9 @@ func (c *Client) handleJoin(env *Envelope) error {
 }
 
 func (c *Client) handleChat(env *Envelope) error {
+	if c.IsObserver() {
+		return errors.New("observers cannot send chat")
+	}
 	if err := c.requireRoom(); err != nil {
 		return err
 	}
@@ -297,6 +373,9 @@ func (c *Client) handleChat(env *Envelope) error {
 }
 
 func (c *Client) handleMediaState(env *Envelope) error {
+	if c.IsObserver() {
+		return errors.New("observers cannot change media state")
+	}
 	if err := c.requireRoom(); err != nil {
 		return err
 	}
@@ -324,6 +403,14 @@ func (c *Client) handleWebRTCOffer(env *Envelope) error {
 		return errors.New("sdp is required")
 	}
 
+	if c.IsObserver() {
+		switch p.Mode {
+		case "play", "play-solo":
+		default:
+			return errors.New("observers can only play streams")
+		}
+	}
+
 	var (
 		streamID string
 		rtcType  zlm.WebRTCType
@@ -331,6 +418,9 @@ func (c *Client) handleWebRTCOffer(env *Envelope) error {
 
 	switch p.Mode {
 	case "publish":
+		if c.IsObserver() {
+			return errors.New("observers cannot publish")
+		}
 		if p.Kind != "cam" && p.Kind != "screen" {
 			return fmt.Errorf("invalid kind for publish: %q", p.Kind)
 		}
@@ -352,6 +442,9 @@ func (c *Client) handleWebRTCOffer(env *Envelope) error {
 		}
 		rtcType = zlm.WebRTCPlay
 	case "publish-solo":
+		if c.IsObserver() {
+			return errors.New("observers cannot publish")
+		}
 		if p.StreamID == "" {
 			return errors.New("streamId is required for publish-solo")
 		}
@@ -393,6 +486,7 @@ func (c *Client) handleWebRTCOffer(env *Envelope) error {
 		// Always notify peers so they (re)pull — needed when a joiner publishes
 		// late or republishes after adding tracks.
 		c.room.broadcastStreamStarted(c, p.Kind, streamID)
+		c.hub.notifyStatsChanged()
 	case "publish-solo":
 		c.mu.Lock()
 		c.streams["solo"] = streamID
@@ -412,6 +506,9 @@ func (c *Client) handleWebRTCOffer(env *Envelope) error {
 }
 
 func (c *Client) handleStreamStarted(env *Envelope) error {
+	if c.IsObserver() {
+		return errors.New("observers cannot publish streams")
+	}
 	if err := c.requireRoom(); err != nil {
 		return err
 	}
@@ -430,6 +527,9 @@ func (c *Client) handleStreamStarted(env *Envelope) error {
 }
 
 func (c *Client) handleStreamStopped(env *Envelope) error {
+	if c.IsObserver() {
+		return errors.New("observers cannot stop streams")
+	}
 	if err := c.requireRoom(); err != nil {
 		return err
 	}
@@ -450,9 +550,7 @@ func (c *Client) handleStreamStopped(env *Envelope) error {
 		// Broadcast first so watching clients tear down immediately — don't
 		// wait for the ZLM HTTP call to complete.
 		c.room.broadcastStreamStopped(c, p.Kind, sid)
-		if p.Kind == "solo" {
-			c.hub.notifyStatsChanged()
-		}
+		c.hub.notifyStatsChanged()
 		go func(app, streamID string) {
 			if err := c.hub.zlm.CloseStream(app, streamID); err != nil {
 				log.Warn().Err(err).Str("user_id", c.UserID).Str("stream", streamID).Msg("close stream")
@@ -497,6 +595,9 @@ func isSafeStreamName(s string) bool {
 // `streamId` for solo publishers. The server only allows clients to control
 // streams they own.
 func (c *Client) handleRecordControl(env *Envelope, start bool) error {
+	if c.IsObserver() {
+		return errors.New("observers cannot control recording")
+	}
 	if err := c.requireRoom(); err != nil {
 		return err
 	}
@@ -574,5 +675,6 @@ func (c *Client) handleRecordControl(env *Envelope, start bool) error {
 	c.send(TypeRecordState, env.ReqID, state)
 	// Broadcast to other peers in the room (no-op for solo rooms).
 	c.room.broadcastRecordState(c, kind, streamID, start)
+	c.hub.notifyStatsChanged()
 	return nil
 }

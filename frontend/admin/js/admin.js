@@ -1,7 +1,8 @@
 (function () {
   const TOKEN_KEY = 'zlmeetkit_admin_token';
   const LOGIN_AT_KEY = 'zlmeetkit_admin_login_at';
-  const WS_RECONNECT_MS = 3000;
+  const NETWORK_ERROR_TITLE = '网络异常';
+  const NETWORK_ERROR_MESSAGE = '网络异常，服务连接已断开，请稍后重试';
 
   const loginView = document.getElementById('loginView');
   const appView = document.getElementById('appView');
@@ -14,13 +15,16 @@
   const totalRoomsEl = document.getElementById('totalRooms');
   const totalClientsEl = document.getElementById('totalClients');
   const dashboardTab = document.getElementById('dashboardTab');
+  const monitorTab = document.getElementById('monitorTab');
+  const dashboardPage = document.getElementById('dashboardPage');
+  const monitorPage = document.getElementById('monitorPage');
   const sessionDuration = document.getElementById('sessionDuration');
   const roomCards = document.getElementById('roomCards');
 
   let dashboardWs = null;
-  let wsReconnectTimer = null;
   let wsManualClose = false;
   let sessionTimer = null;
+  let networkFailureHandled = false;
   let loginAlertDialog = null;
   let loginAlertTitle = null;
   let loginAlertMessage = null;
@@ -145,7 +149,69 @@
     );
   }
 
+  function showToast(message) {
+    showLoginAlert(message, '提示');
+  }
+
+  function handleNetworkFailure(message, title) {
+    if (networkFailureHandled) return;
+    if (!appView.classList.contains('is-active')) return;
+
+    networkFailureHandled = true;
+    wsManualClose = true;
+    stopWatchingAll();
+    stopDashboardWs(true);
+    setToken('');
+    endSession();
+    showLogin();
+    showLoginAlert(message || NETWORK_ERROR_MESSAGE, title || NETWORK_ERROR_TITLE);
+  }
+
+  function resetNetworkFailureGuard() {
+    networkFailureHandled = false;
+  }
+
+  window.__adminHandleNetworkFailure = handleNetworkFailure;
+
+  window.__adminGetToken = getToken;
+  window.__adminShowToast = showToast;
+
+  function stopWatchingAll() {
+    if (window.AdminMonitor?.stopAllWatching) {
+      window.AdminMonitor.stopAllWatching();
+    }
+  }
+
+  function switchAppPage(page) {
+    const isDashboard = page === 'dashboard';
+    document.querySelectorAll('.admin-nav-item[data-page]').forEach(function (el) {
+      el.classList.toggle('active', el.dataset.page === page);
+    });
+    if (dashboardPage) {
+      dashboardPage.classList.toggle('active', isDashboard);
+      dashboardPage.setAttribute('aria-hidden', isDashboard ? 'false' : 'true');
+    }
+    if (monitorPage) {
+      monitorPage.classList.toggle('active', !isDashboard);
+      monitorPage.setAttribute('aria-hidden', isDashboard ? 'true' : 'false');
+    }
+    const monitorLivePanel = document.getElementById('monitorLivePanel');
+    if (monitorLivePanel) {
+      monitorLivePanel.hidden = true;
+      monitorLivePanel.classList.remove('active');
+      monitorLivePanel.setAttribute('aria-hidden', 'true');
+    }
+    const mainEl = document.querySelector('.admin-main');
+    if (mainEl) {
+      mainEl.classList.toggle('admin-main--monitor', !isDashboard);
+      if (isDashboard) {
+        mainEl.classList.remove('admin-main--monitor-live');
+      }
+    }
+  }
+
   function handleSessionExpired(message, title) {
+    stopWatchingAll();
     setToken('');
     endSession();
     showLogin();
@@ -167,6 +233,7 @@
   }
 
   function showLogin() {
+    stopWatchingAll();
     loginView.classList.add('is-active');
     loginView.setAttribute('aria-hidden', 'false');
     appView.classList.remove('is-active');
@@ -178,6 +245,7 @@
   }
 
   function showApp() {
+    resetNetworkFailureGuard();
     loginView.classList.remove('is-active');
     loginView.setAttribute('aria-hidden', 'true');
     appView.classList.add('is-active');
@@ -242,24 +310,8 @@
     return proto + '//' + location.host + '/api/admin/ws?token=' + encodeURIComponent(token);
   }
 
-  function clearWsReconnectTimer() {
-    if (wsReconnectTimer) {
-      clearTimeout(wsReconnectTimer);
-      wsReconnectTimer = null;
-    }
-  }
-
-  function scheduleWsReconnect() {
-    if (wsManualClose || wsReconnectTimer) return;
-    wsReconnectTimer = setTimeout(function () {
-      wsReconnectTimer = null;
-      connectDashboardWs();
-    }, WS_RECONNECT_MS);
-  }
-
   function stopDashboardWs(manual) {
     wsManualClose = manual;
-    clearWsReconnectTimer();
     if (dashboardWs) {
       dashboardWs.close();
       dashboardWs = null;
@@ -297,7 +349,7 @@
     ws.onclose = function () {
       if (dashboardWs === ws) dashboardWs = null;
       if (!wsManualClose && getToken() && appView.classList.contains('is-active')) {
-        scheduleWsReconnect();
+        handleNetworkFailure();
       }
     };
   }
@@ -315,6 +367,9 @@
     if (totalRoomsEl) totalRoomsEl.textContent = hub.totalRooms != null ? hub.totalRooms : 0;
     if (totalClientsEl) totalClientsEl.textContent = hub.totalClients != null ? hub.totalClients : 0;
     renderRoomCards(hub);
+    if (window.AdminMonitor?.updateMonitorHub) {
+      window.AdminMonitor.updateMonitorHub(hub);
+    }
   }
 
   async function apiLogin(username, password) {
@@ -374,6 +429,9 @@
       return data;
     } catch (e) {
       console.error(e);
+      if (appView.classList.contains('is-active')) {
+        handleNetworkFailure();
+      }
       return null;
     }
   }
@@ -446,7 +504,19 @@
     }
   });
 
-  logoutBtn.addEventListener('click', function () {
+  logoutBtn.addEventListener('click', async function () {
+    const token = getToken();
+    stopWatchingAll();
+    if (token) {
+      try {
+        await fetch('/api/admin/logout', {
+          method: 'POST',
+          headers: { 'X-Admin-Token': token },
+        });
+      } catch (e) {
+        console.error(e);
+      }
+    }
     setToken('');
     endSession();
     loginPassword.value = '';
@@ -457,9 +527,14 @@
 
   if (dashboardTab) {
     dashboardTab.addEventListener('click', function () {
-      document.querySelectorAll('.admin-nav-item').forEach(function (el) {
-        el.classList.toggle('active', el === dashboardTab);
-      });
+      switchAppPage('dashboard');
+      requestDashboardRefresh();
+    });
+  }
+
+  if (monitorTab) {
+    monitorTab.addEventListener('click', function () {
+      switchAppPage('monitor');
       requestDashboardRefresh();
     });
   }

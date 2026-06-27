@@ -79,6 +79,28 @@ func (r *Room) hasStreamID(streamID string) bool {
 	return false
 }
 
+// hasPushMember reports whether a solo push publisher is already in the room.
+func (r *Room) hasPushMember() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.hasPushMemberLocked()
+}
+
+func (r *Room) hasPushMemberLocked() bool {
+	for _, c := range r.clients {
+		if c.IsObserver() {
+			continue
+		}
+		c.mu.RLock()
+		role := c.soloRole
+		c.mu.RUnlock()
+		if role == SoloRolePush {
+			return true
+		}
+	}
+	return false
+}
+
 // snapshotPeers returns the metadata other peers should see when joining.
 // Excludes the caller (passed in as `excludeID`).
 func (r *Room) snapshotPeers(excludeID string) []PeerInfo {
@@ -86,7 +108,7 @@ func (r *Room) snapshotPeers(excludeID string) []PeerInfo {
 	defer r.mu.RUnlock()
 	out := make([]PeerInfo, 0, len(r.clients))
 	for id, c := range r.clients {
-		if id == excludeID {
+		if id == excludeID || c.IsObserver() {
 			continue
 		}
 		c.mu.RLock()
@@ -106,6 +128,17 @@ func (r *Room) snapshotPeers(excludeID string) []PeerInfo {
 	return out
 }
 
+// realMemberCountLocked counts connected clients excluding admin observers.
+func (r *Room) realMemberCountLocked() int {
+	n := 0
+	for _, c := range r.clients {
+		if !c.IsObserver() {
+			n++
+		}
+	}
+	return n
+}
+
 // addClient registers a client and notifies others. Returns an error if the
 // room is full or if the requested mode conflicts with the existing room mode.
 func (r *Room) addClient(c *Client, requestedMode string) error {
@@ -114,11 +147,18 @@ func (r *Room) addClient(c *Client, requestedMode string) error {
 		r.mu.Unlock()
 		return errors.New("room mode mismatch (already " + r.Mode + ")")
 	}
-	if cap := r.capacity(); cap > 0 && len(r.clients) >= cap {
+	if cap := r.capacity(); cap > 0 && r.realMemberCountLocked() >= cap {
 		r.mu.Unlock()
 		return errors.New("room is full")
 	}
+	if r.Mode == RoomModeSolo && c.soloRole == SoloRolePush && r.hasPushMemberLocked() {
+		r.mu.Unlock()
+		return errors.New(ErrRoomInUse)
+	}
 	for _, existing := range r.clients {
+		if existing.IsObserver() {
+			continue
+		}
 		if existing.Nickname == c.Nickname {
 			r.mu.Unlock()
 			if r.Mode == RoomModeSolo {
@@ -160,6 +200,31 @@ func (r *Room) addClient(c *Client, requestedMode string) error {
 	return nil
 }
 
+// addObserverClient registers a silent admin observer. Observers do not
+// broadcast peer-joined, do not count toward room capacity, and are omitted
+// from peer snapshots visible to business clients.
+func (r *Room) addObserverClient(c *Client) error {
+	if !c.IsObserver() {
+		return errors.New("not an observer client")
+	}
+	r.mu.Lock()
+	r.clients[c.UserID] = c
+	r.mu.Unlock()
+
+	c.room = r
+
+	log.Info().Str("room", r.ID).Str("mode", r.Mode).Str("user_id", c.UserID).Msg("observe-join")
+
+	peers := r.snapshotPeers(c.UserID)
+	c.send(TypeObserveJoined, "", JoinedPayload{
+		UserID: c.UserID,
+		Room:   r.ID,
+		Peers:  peers,
+	})
+	r.hub.notifyStatsChanged()
+	return nil
+}
+
 // removeClient unregisters and notifies. Also stops any active recordings and
 // closes all streams the client was publishing on ZLM, since RTC peer
 // connections may not tear down immediately.
@@ -173,6 +238,12 @@ func (r *Room) removeClient(c *Client) {
 	r.mu.Unlock()
 
 	log.Info().Str("room", r.ID).Str("user_id", c.UserID).Msg("leave")
+
+	if c.IsObserver() {
+		r.hub.removeRoomIfEmpty(r)
+		r.hub.notifyStatsChanged()
+		return
+	}
 
 	// Collect streams + active recordings under client lock. We also keep the
 	// kind→sid mapping so we can broadcast peer-stream-stopped before the
@@ -218,12 +289,70 @@ func (r *Room) removeClient(c *Client) {
 		}
 	}(recordSids, sids)
 
+	if !r.isBusinessActive() {
+		r.dismissObservers("业务已结束")
+	}
+
 	r.hub.removeRoomIfEmpty(r)
 	r.hub.notifyStatsChanged()
 }
 
-// broadcastExcept sends a message to every client except the one with the given ID.
+// isBusinessActive reports whether real business clients remain (mirrors admin UI).
+func (r *Room) isBusinessActive() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	realCount := 0
+	hasPush := false
+	for _, c := range r.clients {
+		if c.IsObserver() {
+			continue
+		}
+		realCount++
+		if r.Mode == RoomModeSolo && c.soloRole != SoloRolePlay {
+			hasPush = true
+		}
+	}
+	if realCount == 0 {
+		return false
+	}
+	if r.Mode == RoomModeSolo {
+		return hasPush
+	}
+	return true
+}
+
+// dismissObservers notifies admin watchers and removes them from the room.
+func (r *Room) dismissObservers(message string) {
+	r.mu.RLock()
+	observers := make([]*Client, 0)
+	for _, c := range r.clients {
+		if c.IsObserver() {
+			observers = append(observers, c)
+		}
+	}
+	r.mu.RUnlock()
+
+	payload := ObserveEndedPayload{Message: message}
+	for _, c := range observers {
+		c.send(TypeObserveEnded, "", payload)
+		c.LeaveRoom()
+	}
+}
+
+// broadcastExcept sends a message to every non-observer client except exceptID.
 func (r *Room) broadcastExcept(exceptID, msgType string, payload any) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for id, c := range r.clients {
+		if id == exceptID || c.IsObserver() {
+			continue
+		}
+		c.send(msgType, "", payload)
+	}
+}
+
+// broadcastToAllExcept sends to every client (including observers) except exceptID.
+func (r *Room) broadcastToAllExcept(exceptID, msgType string, payload any) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	for id, c := range r.clients {
@@ -248,6 +377,9 @@ func (r *Room) broadcastChat(from *Client, text string) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	for _, c := range r.clients {
+		if c.IsObserver() {
+			continue
+		}
 		c.send(TypeChat, "", payload)
 	}
 }
@@ -267,7 +399,7 @@ func (r *Room) broadcastMediaState(c *Client) {
 }
 
 func (r *Room) broadcastStreamStarted(c *Client, kind, streamID string) {
-	r.broadcastExcept(c.UserID, TypePeerStreamStarted, PeerStreamPayload{
+	r.broadcastToAllExcept(c.UserID, TypePeerStreamStarted, PeerStreamPayload{
 		UserID:   c.UserID,
 		Kind:     kind,
 		StreamID: streamID,
@@ -275,7 +407,7 @@ func (r *Room) broadcastStreamStarted(c *Client, kind, streamID string) {
 }
 
 func (r *Room) broadcastStreamStopped(c *Client, kind, streamID string) {
-	r.broadcastExcept(c.UserID, TypePeerStreamStopped, PeerStreamPayload{
+	r.broadcastToAllExcept(c.UserID, TypePeerStreamStopped, PeerStreamPayload{
 		UserID:   c.UserID,
 		Kind:     kind,
 		StreamID: streamID,
