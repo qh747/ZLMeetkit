@@ -896,7 +896,7 @@
 
   .admin-login-field-row input {
     min-height: 56px;
-    font-size: 17px;
+    font-size: 16px;
   }
 
   .admin-primary {
@@ -912,5 +912,44 @@
   .admin-logout-btn {
     padding: 0 14px;
     font-size: 14px;
+  }
+}
+
+/* Mobile safe area */
+.admin-login-view {
+  padding-top: calc(32px + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(32px + env(safe-area-inset-bottom, 0px));
+  padding-left: calc(24px + env(safe-area-inset-left, 0px));
+  padding-right: calc(24px + env(safe-area-inset-right, 0px));
+}
+
+@media (max-width: 768px) {
+  .admin-app-header {
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-left: calc(18px + env(safe-area-inset-left, 0px));
+    padding-right: calc(12px + env(safe-area-inset-right, 0px));
+  }
+
+  .admin-main {
+    padding-bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .admin-nav-item {
+    min-height: 48px;
+  }
+
+  .admin-refresh-btn,
+  .admin-logout-btn,
+  .admin-primary {
+    min-height: 44px;
+  }
+
+  .admin-login-card {
+    background: var(--panel-solid);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: var(--shadow-lg);
   }
 }

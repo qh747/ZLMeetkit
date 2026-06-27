@@ -1,6 +1,5 @@
 // ui.js — DOM helpers for the meeting page: video tiles, chat log, status bar.
 
-const MEETING_COLS = 3;
 const MEETING_ASPECT = 16 / 9;
 const FOCUS_COL_GAP = 3;
 const FOCUS_THUMB_GAP = 4;
@@ -14,6 +13,81 @@ const FOCUS_THUMB_MIN_W_MANY = 196;
 const FOCUS_THUMB_MIN_H_MANY = 96;
 const FOCUS_MAIN_WIDTH_RATIO = 0.96;
 const FOCUS_MAIN_HEIGHT_RATIO = 0.94;
+
+function attachStreamToVideo(video, stream) {
+  video.srcObject = stream;
+  if (!stream || stream.getVideoTracks().length === 0) return;
+  const play = () => { video.play().catch(() => {}); };
+  play();
+  // Late video track (republish) or iOS autoplay policy — retry when track arrives.
+  stream.addEventListener('addtrack', (ev) => {
+    if (ev.track?.kind === 'video') play();
+  });
+}
+
+/** Phone: ≤3 tiles 1 col · >3 tiles 2 cols · tablet 2 · desktop 3 */
+function meetingCols(gridW, count = 1) {
+  const root = document.documentElement;
+  const isPhone = root.classList.contains('device-mobile') && !root.classList.contains('device-tablet');
+  if (isPhone) return count > 3 ? 2 : 1;
+  if (gridW <= 768) return 2;
+  return 3;
+}
+
+function focusLayoutParams(gridW) {
+  if (gridW <= 480) {
+    return {
+      insetX: 6,
+      insetY: 4,
+      colGap: 2,
+      thumbGap: 3,
+      maxThumbW: 112,
+      minThumbW: 88,
+      minThumbH: 56,
+      maxThumbWMany: 128,
+      minThumbWMany: 96,
+      minThumbHMany: 56,
+      maxStackRatio: 0.72,
+      maxStackRatioMany: 0.78,
+      mainWidthRatio: 0.98,
+      mainHeightRatio: 0.96,
+    };
+  }
+  if (gridW <= 720) {
+    return {
+      insetX: 10,
+      insetY: 6,
+      colGap: 2,
+      thumbGap: 3,
+      maxThumbW: 180,
+      minThumbW: 120,
+      minThumbH: 72,
+      maxThumbWMany: 220,
+      minThumbWMany: 140,
+      minThumbHMany: 80,
+      maxStackRatio: 0.68,
+      maxStackRatioMany: 0.8,
+      mainWidthRatio: 0.97,
+      mainHeightRatio: 0.95,
+    };
+  }
+  return {
+    insetX: FOCUS_INSET_X,
+    insetY: FOCUS_INSET_Y,
+    colGap: FOCUS_COL_GAP,
+    thumbGap: FOCUS_THUMB_GAP,
+    maxThumbW: FOCUS_MAX_THUMB_W,
+    minThumbW: FOCUS_THUMB_MIN_W,
+    minThumbH: 84,
+    maxThumbWMany: FOCUS_MAX_THUMB_W_MANY,
+    minThumbWMany: FOCUS_THUMB_MIN_W_MANY,
+    minThumbHMany: FOCUS_THUMB_MIN_H_MANY,
+    maxStackRatio: 0.66,
+    maxStackRatioMany: 0.84,
+    mainWidthRatio: FOCUS_MAIN_WIDTH_RATIO,
+    mainHeightRatio: FOCUS_MAIN_HEIGHT_RATIO,
+  };
+}
 
 export class MeetingUI {
   constructor() {
@@ -158,11 +232,10 @@ export class MeetingUI {
       entry.nameTag.textContent = opts.nickname + (opts.isScreen ? '（屏幕）' : '');
     }
     if (opts.stream !== undefined) {
-      entry.video.srcObject = opts.stream;
       if (opts.stream && opts.stream.getVideoTracks().length > 0) {
         entry.tile.classList.remove('no-video');
-        entry.video.play().catch(() => {});
       }
+      attachStreamToVideo(entry.video, opts.stream);
     }
     if (opts.recording !== undefined) {
       entry.rec.classList.toggle('hidden', !opts.recording);
@@ -307,11 +380,11 @@ export class MeetingUI {
     const tile = this._getPipTile();
     if (!tile) return;
     const margin = 8;
-    const toolbarReserve = 72;
+    const toolbarReserve = window.innerWidth <= 480 ? 64 : 72;
     const gridW = this.grid.clientWidth;
     const gridH = this.grid.clientHeight;
-    const tileW = tile.offsetWidth || 360;
-    const tileH = tile.offsetHeight || 203;
+    const tileW = tile.offsetWidth || Math.min(360, gridW - margin * 2);
+    const tileH = tile.offsetHeight || Math.floor(tileW * 9 / 16);
     this.pipPosition.left = Math.max(margin, Math.min(this.pipPosition.left, gridW - tileW - margin));
     this.pipPosition.top = Math.max(margin, Math.min(this.pipPosition.top, gridH - tileH - toolbarReserve));
   }
@@ -369,12 +442,14 @@ export class MeetingUI {
   }
 
   _applyUniformGridLayout(count) {
-    const rows = Math.ceil(count / MEETING_COLS);
-    const { w, h } = this._computeUniformTileSize(rows);
+    const { gridW } = this._gridInnerMetrics();
+    const cols = meetingCols(gridW, count);
+    const rows = Math.ceil(count / cols);
+    const { w, h } = this._computeUniformTileSize(rows, cols);
 
     this.grid.style.justifyContent = 'center';
     this.grid.style.alignContent = 'center';
-    this.grid.style.gridTemplateColumns = `repeat(${MEETING_COLS}, ${w}px)`;
+    this.grid.style.gridTemplateColumns = `repeat(${cols}, ${w}px)`;
     this.grid.style.gridTemplateRows = `repeat(${rows}, ${h}px)`;
     this._setAllTileSizes(w, h);
   }
@@ -383,16 +458,17 @@ export class MeetingUI {
     const sidebarKeys = keys.filter((k) => k !== this.focusedKey);
     const sidebarCount = sidebarKeys.length;
     const { gridW, gridH } = this._gridInnerMetrics();
-    const innerW = Math.max(0, gridW - FOCUS_INSET_X * 2);
-    const innerH = Math.max(0, gridH - FOCUS_INSET_Y * 2);
+    const fp = focusLayoutParams(gridW);
+    const innerW = Math.max(0, gridW - fp.insetX * 2);
+    const innerH = Math.max(0, gridH - fp.insetY * 2);
 
     if (sidebarCount === 0) {
       this._applyFocusMainOnly(innerW, innerH);
-      this.grid.style.margin = `${FOCUS_INSET_Y}px ${FOCUS_INSET_X}px`;
+      this.grid.style.margin = `${fp.insetY}px ${fp.insetX}px`;
       return;
     }
 
-    const layout = this._computeFocusLayout(sidebarCount, innerW, innerH);
+    const layout = this._computeFocusLayout(sidebarCount, innerW, innerH, fp);
 
     const rowTracks = [
       ...Array(sidebarCount).fill(`${layout.thumbH}px`),
@@ -400,11 +476,11 @@ export class MeetingUI {
     ].join(' ');
     const totalRows = sidebarCount + 1;
 
-    this.grid.style.rowGap = `${FOCUS_THUMB_GAP}px`;
-    this.grid.style.columnGap = `${FOCUS_COL_GAP}px`;
+    this.grid.style.rowGap = `${fp.thumbGap}px`;
+    this.grid.style.columnGap = `${fp.colGap}px`;
     this.grid.style.width = `${innerW}px`;
     this.grid.style.height = `${innerH}px`;
-    this.grid.style.margin = `${FOCUS_INSET_Y}px ${FOCUS_INSET_X}px`;
+    this.grid.style.margin = `${fp.insetY}px ${fp.insetX}px`;
     this.grid.style.justifyContent = 'start';
     this.grid.style.alignContent = 'start';
     this.grid.style.gridTemplateColumns = `minmax(0, 1fr) ${layout.sidebarW}px`;
@@ -449,13 +525,13 @@ export class MeetingUI {
   }
 
   /** Sidebar thumbs ~16:9; larger thumbs when 5+ other participants in focus mode. */
-  _computeFocusLayout(sidebarCount, innerW, innerH) {
+  _computeFocusLayout(sidebarCount, innerW, innerH, fp = focusLayoutParams(innerW)) {
     const many = sidebarCount >= FOCUS_MANY_SIDEBAR;
-    const maxThumbW = many ? FOCUS_MAX_THUMB_W_MANY : FOCUS_MAX_THUMB_W;
-    const minThumbW = many ? FOCUS_THUMB_MIN_W_MANY : FOCUS_THUMB_MIN_W;
-    const minThumbH = many ? FOCUS_THUMB_MIN_H_MANY : 84;
-    const maxStackRatio = many ? 0.84 : 0.66;
-    const stackGap = (sidebarCount - 1) * FOCUS_THUMB_GAP;
+    const maxThumbW = many ? fp.maxThumbWMany : fp.maxThumbW;
+    const minThumbW = many ? fp.minThumbWMany : fp.minThumbW;
+    const minThumbH = many ? fp.minThumbHMany : fp.minThumbH;
+    const maxStackRatio = many ? fp.maxStackRatioMany : fp.maxStackRatio;
+    const stackGap = (sidebarCount - 1) * fp.thumbGap;
     const maxStackH = innerH * maxStackRatio;
 
     let thumbH = Math.floor((maxStackH - stackGap) / sidebarCount);
@@ -481,9 +557,9 @@ export class MeetingUI {
     const sidebarW = thumbW;
     const mainDisplayW = Math.max(
       0,
-      Math.floor((innerW - FOCUS_COL_GAP - sidebarW) * FOCUS_MAIN_WIDTH_RATIO),
+      Math.floor((innerW - fp.colGap - sidebarW) * fp.mainWidthRatio),
     );
-    const mainDisplayH = Math.max(0, Math.floor(innerH * FOCUS_MAIN_HEIGHT_RATIO));
+    const mainDisplayH = Math.max(0, Math.floor(innerH * fp.mainHeightRatio));
     return { thumbW, thumbH, sidebarW, mainDisplayW, mainDisplayH };
   }
 
@@ -509,10 +585,10 @@ export class MeetingUI {
     return { w: Math.floor(w), h: Math.floor(h) };
   }
 
-  _computeUniformTileSize(rows) {
+  _computeUniformTileSize(rows, cols = meetingCols(this._gridInnerMetrics().gridW)) {
     const { gridW, gridH, gap } = this._gridInnerMetrics();
     if (gridW <= 0 || gridH <= 0) return { w: 0, h: 0 };
-    const maxW = (gridW - gap * (MEETING_COLS - 1)) / MEETING_COLS;
+    const maxW = (gridW - gap * (cols - 1)) / cols;
     const maxH = (gridH - gap * (rows - 1)) / rows;
     return this._fitAspectSize(maxW, maxH);
   }

@@ -223,6 +223,10 @@ async function main() {
   for (const t of localStream.getAudioTracks()) t.enabled = state.micOn;
   for (const t of localStream.getVideoTracks()) t.enabled = state.camOn;
 
+  // Mobile Safari: pulls started during the permission dialog may fail or
+  // leave RTCPeerConnections in a bad state — re-pull once media is granted.
+  retryExistingPeerPulls();
+
   const hasLocalTracks = localStream.getTracks().length > 0;
   const publishPromise = hasLocalTracks
     ? publishStream({
@@ -247,6 +251,12 @@ async function main() {
   }
 
   await publishPromise;
+
+  // Second pass after publish — some mobile browsers need local send path up
+  // before recv-only play PCs reliably receive tracks from ZLM.
+  if (state.peers.size > 0) {
+    retryExistingPeerPulls();
+  }
 }
 
 function buildWsURL() {
@@ -281,7 +291,8 @@ function wireSignalHandlers(sig) {
         camOn: peer.camOn,
       });
       for (const s of peer.streams || []) {
-        startPullingPeerStream(peer.userId, peer.nickname, s.kind);
+        notePeerStreamKind(peer.userId, s.kind);
+        startPullingPeerStream(peer.userId, peer.nickname, s.kind, { preemptive: true });
       }
     }
   });
@@ -311,6 +322,7 @@ function wireSignalHandlers(sig) {
   });
 
   sig.on('peer-stream-started', (p) => {
+    notePeerStreamKind(p.userId, p.kind);
     const peer = ensurePeer(p.userId);
     startPullingPeerStream(p.userId, peer.nickname, p.kind, { preemptive: true, force: true });
   });
@@ -366,12 +378,28 @@ function wireSignalHandlers(sig) {
 function ensurePeer(userId, nickname) {
   let peer = state.peers.get(userId);
   if (!peer) {
-    peer = { nickname: nickname || userId.slice(0, 6) };
+    peer = { nickname: nickname || userId.slice(0, 6), expectedKinds: new Set() };
     state.peers.set(userId, peer);
   } else if (nickname) {
     peer.nickname = nickname;
   }
+  if (!peer.expectedKinds) peer.expectedKinds = new Set();
   return peer;
+}
+
+function notePeerStreamKind(userId, kind) {
+  if (!kind) return;
+  ensurePeer(userId).expectedKinds.add(kind);
+}
+
+/** Re-pull remote streams after local media is ready (fixes mobile first-join race). */
+function retryExistingPeerPulls() {
+  for (const [userId, peer] of state.peers.entries()) {
+    const kinds = peer.expectedKinds?.size ? [...peer.expectedKinds] : ['cam'];
+    for (const kind of kinds) {
+      startPullingPeerStream(userId, peer.nickname, kind, { preemptive: true, force: true });
+    }
+  }
 }
 
 function stopPeerPull(peer, kind) {
